@@ -341,3 +341,26 @@ def test_all_sources_down_fails_loudly_and_resumes(monkeypatch, articles):
     workflow.execute_run(rid)
     assert workflow.get_run(rid)["status"] == "COMPLETED"
     assert workflow.run_result(rid)["opportunities"], "resumed run must search again (failures were not cached)"
+
+
+def test_model_prescreen_skips_irrelevant_articles():
+    from signalhunt.agents.extractor import worth_model_call
+    spec = {"states": ["Gujarat"], "triggers": ["WAREHOUSE_EXPANSION"]}
+    assert not worth_model_call({"title": "Fire", "text": "A fire broke out at a warehouse in Surat, Gujarat."}, spec)[0]
+    assert not worth_model_call({"title": "Pune plant", "text": "Delta Motors opened a new plant in Pune."}, spec)[0]
+    assert worth_model_call({"title": "Sanand", "text": "Acme has opened a new warehouse in Sanand."}, spec)[0]
+
+
+def test_model_path_falls_back_to_rules_when_api_fails(fake_sources, monkeypatch):
+    """Key set but the API is down / refuses: the run still completes with rule extraction."""
+    from signalhunt import llm
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    def boom(*a, **k):
+        raise llm.LLMUnavailable("Claude API error 529")
+    monkeypatch.setattr(llm, "structured", boom)
+    rid = workflow.create_run(GUJ_REQUEST)
+    workflow.execute_run(rid)
+    res = workflow.run_result(rid)
+    assert res["status"] == "COMPLETED" and any(o["company_name"] == "Acme Foods" for o in res["opportunities"])
+    assert res["spec"]["parse_method"] == "rules"

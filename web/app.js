@@ -227,7 +227,7 @@ async function oppDetail(id) {
             <div class="text-xs text-slate-500 mt-2">${esc(f.source_name)} · published ${esc(f.published || "?")} <span class="mono">(${esc(f.published_field || "")})</span> · retrieved ${esc(f.retrieved_at)} via ${esc(f.via)}<br/>
             <a target="_blank" rel="noopener" class="text-indigo-600 break-all" href="${esc(f.source_url)}">${esc(f.source_url)}</a></div></div>`).join("")}</div></div>
 
-        <div class="card p-5"><div class="flex justify-between"><h2 class="font-semibold">Why this could indicate 3PL demand</h2><span class="pill bg-violet-100 text-violet-700">Model interpretation (${esc(r.method || "")})</span></div>
+        <div class="card p-5"><div class="flex justify-between"><h2 class="font-semibold">Why this could indicate 3PL demand</h2><span class="pill bg-violet-100 text-violet-700">${r.method === "llm" ? "Model interpretation (Claude)" : "Template interpretation (no model)"} · inference, not fact</span></div>
           <p class="text-sm mt-3">${esc(r.why_3pl_demand)}</p>
           <h3 class="font-semibold text-sm mt-4">Potential logistics requirements <span class="text-xs font-normal text-slate-500">(inference)</span></h3>
           <ul class="list-disc ml-5 text-sm mt-1">${(r.logistics_requirements || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>

@@ -232,7 +232,9 @@ def _process_article(ctx: RunContext, c: dict, spec: dict, client: dict, art: di
         art["publisher"] = c["publisher"]
     ex = extractor.extract(ctx, art, spec)
     if not ex["events"]:
-        _save_candidate(ctx.run_id, c["cand_id"], "REJECTED", "no qualifying business event stated in the article",
+        reason = (f"not sent to the model ({ex['prescreen_reason']})" if ex.get("prescreen_reason")
+                  else "no qualifying business event stated in the article")
+        _save_candidate(ctx.run_id, c["cand_id"], "REJECTED", reason,
                         {"listing": c, "article": {k: art.get(k) for k in ("title", "publisher", "published")}})
         return []
     out = []

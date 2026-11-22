@@ -78,14 +78,30 @@ def llm_extract(ctx: RunContext, art: dict) -> list[dict]:
 
 
 # ---------------- deterministic extractor (default when no model key) ----------------
-from .rule_extractor import LOGISTICS_NAME, rule_extract  # noqa: E402,F401
+from .rule_extractor import FACILITY, HC, NEWNESS, NOISE, LOGISTICS_NAME, rule_extract, split_sentences  # noqa: E402,F401
+
+
+def worth_model_call(art: dict, spec: dict) -> tuple[bool, str]:
+    """Cheap deterministic pre-screen so the model only reads articles that could contain a qualifying event.
+    Saves most of the model spend: fires, court cases, awards and other-state stories never reach Claude."""
+    text = f"{art.get('title', '')}\n{art.get('text', '')}"
+    if spec.get("states") and not (geo.states_in(text) & set(spec["states"])):
+        return False, "article never mentions a requested state or one of its cities"
+    for s in split_sentences(text):
+        if FACILITY.search(s) and NEWNESS.search(s) and not NOISE.search(s) and not HC.search(s):
+            return True, ""
+    return False, "no sentence describes a new facility, expansion or investment"
 
 
 def extract(ctx: RunContext, art: dict, spec: dict) -> dict:
-    key = f"extract:{sha(art['url'], ctx.cfg.llm_enabled, ','.join(spec['triggers']))}"
+    key = f"extract:{sha(art['url'], ctx.cfg.llm_enabled, ','.join(spec['triggers']), ','.join(spec.get('states', [])))}"
 
     def run():
         if ctx.cfg.llm_enabled:
+            ok, why = worth_model_call(art, spec)
+            if not ok:
+                ctx.record("anthropic", "extract_events", "skipped", detail=f"pre-screen: {why}: {art['url'][:150]}")
+                return {"method": "prescreen", "events": [], "prescreen_reason": why}
             try:
                 return {"method": "llm", "events": llm_extract(ctx, art)}
             except llm.LLMUnavailable as e:
