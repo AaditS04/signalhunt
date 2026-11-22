@@ -212,4 +212,5 @@ def test_unclear_distress_headline_is_a_caution_not_a_refusal():
 def test_fragments_and_divisions_are_not_companies():
     from signalhunt.agents import rule_extractor as rx
     assert rx.clean_company("and Mysuru") == "" and rx.clean_company("Aluminium Division") == ""
+    assert rx.clean_company("Continuous Sandwich PUF Panel Manufacturing Line The") == ""
     assert rx.clean_company("Reliance Group") == "Reliance Group"
