@@ -1,6 +1,6 @@
 {
   "_comment": "Client facts are configuration, not code. Organizers can change the client during the build (new rule, new price): edit this file, no code change needed.",
-  "client_name": "Client 3PL Pvt Ltd (replace with the kickoff name)",
+  "client_name": "Sahyadri Freightlines Pvt Ltd (fictional demo client)",
   "description": "Mid-size Indian third-party logistics company",
   "services": [
     "Warehousing and contract logistics",
@@ -9,16 +9,38 @@
     "Inbound and outbound distribution",
     "Last-mile delivery"
   ],
-  "serviceable_states": ["Gujarat", "Rajasthan", "Maharashtra", "Madhya Pradesh", "Karnataka", "Tamil Nadu", "Haryana", "Delhi", "Uttar Pradesh", "Telangana"],
+  "serviceable_states": [
+    "Gujarat",
+    "Rajasthan",
+    "Maharashtra",
+    "Madhya Pradesh",
+    "Karnataka",
+    "Tamil Nadu",
+    "Haryana",
+    "Delhi",
+    "Uttar Pradesh",
+    "Telangana"
+  ],
   "excluded_companies": [
-    "Delhivery", "Blue Dart", "Gati", "TCI Express", "Transport Corporation of India", "Mahindra Logistics",
-    "Allcargo", "VRL Logistics", "Shadowfax", "Ecom Express", "Xpressbees", "Container Corporation of India", "Ritco Logistics"
+    "Delhivery",
+    "Blue Dart",
+    "Gati",
+    "TCI Express",
+    "Transport Corporation of India",
+    "Mahindra Logistics",
+    "Allcargo",
+    "VRL Logistics",
+    "Shadowfax",
+    "Ecom Express",
+    "Xpressbees",
+    "Container Corporation of India",
+    "Ritco Logistics"
   ],
   "excluded_reason": "Rivals and logistics providers are not prospects.",
   "sender": {
     "name": "Business Development Team",
-    "company": "Client 3PL Pvt Ltd",
-    "email": "bd@client3pl.example"
+    "company": "Sahyadri Freightlines Pvt Ltd",
+    "email": "bd@sahyadri-freight.example"
   },
   "pricing": {
     "price_per_qualified_opportunity_inr": 2500,
@@ -28,5 +50,82 @@
     "Never contact a person whose role cannot be sourced.",
     "Never include personal phone numbers or personal email addresses in reports.",
     "Every outbound email waits for human approval."
-  ]
+  ],
+  "_capacity_comment": "All capacity, rate, limit and policy numbers below are client-supplied demo values for the fictional 3PL, not market data.",
+  "capacity": {
+    "lanes": [
+      {
+        "id": "CHE-PUN",
+        "origin_city": "Chennai",
+        "origin_state": "Tamil Nadu",
+        "dest_cities": [
+          "Pune",
+          "Mumbai"
+        ],
+        "dest_state": "Maharashtra",
+        "days": [
+          "Thu"
+        ],
+        "truck_type": "32 ft MXL closed body",
+        "empty_trucks_per_week": 6,
+        "rate_inr_per_trip": 52000,
+        "floor_inr_per_trip": 41000
+      }
+    ],
+    "spaces": [
+      {
+        "id": "CHK-COLD",
+        "city": "Chakan",
+        "state": "Maharashtra",
+        "type": "cold chain",
+        "pallets_free": 800,
+        "from": "2026-12-01",
+        "rate_inr_per_pallet_month": 1100,
+        "floor_inr_per_pallet_month": 900
+      }
+    ]
+  },
+  "service_limits": {
+    "pickup_window_hours": 4,
+    "missed_pickup_credit_pct": 10
+  },
+  "payment_policy": {
+    "default_credit_days": 45,
+    "msme_registered": true,
+    "advance_pct_on_caution": 30,
+    "psu_expected_cycle_days": 90
+  },
+  "captive_logistics_groups": [
+    "Mahindra",
+    "TVS",
+    "Hyundai",
+    "Kia",
+    "Reliance",
+    "Adani"
+  ],
+  "psu_buyers": [],
+  "cold_chain_industries": [
+    "pharma",
+    "pharmaceutical",
+    "dairy",
+    "food",
+    "frozen",
+    "beverage",
+    "fmcg",
+    "vaccine",
+    "biotech",
+    "meat",
+    "seafood",
+    "ice cream",
+    "chocolate"
+  ],
+  "trust_card": {
+    "legal_name": "Sahyadri Freightlines Pvt Ltd",
+    "gstin": "DEMO-NOT-A-REAL-GSTIN",
+    "udyam": "DEMO-NOT-A-REAL-UDYAM",
+    "years_operating": 11,
+    "fleet_owned": 42,
+    "note": "Fictional demo client; identifiers are placeholders."
+  },
+  "outreach_min_rung": "HIRING_ON_GROUND"
 }
