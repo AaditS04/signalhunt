@@ -35,7 +35,7 @@ class Settings:
     crustdata_usd_per_credit: float = field(default_factory=lambda: _f("CRUSTDATA_USD_PER_CREDIT", 0.01))
     max_run_cost_usd: float = field(default_factory=lambda: _f("MAX_RUN_COST_USD", 1.50))
     max_run_seconds: int = field(default_factory=lambda: _i("MAX_RUN_SECONDS", 600))
-    max_articles: int = field(default_factory=lambda: _i("MAX_ARTICLES_PER_RUN", 25))
+    max_articles: int = field(default_factory=lambda: _i("MAX_ARTICLES_PER_RUN", 60))
     max_llm_calls: int = field(default_factory=lambda: _i("MAX_LLM_CALLS_PER_RUN", 40))
     usd_inr: float = field(default_factory=lambda: _f("USD_INR", 88.0))
     outreach_mode: str = field(default_factory=lambda: os.getenv("OUTREACH_MODE", "sandbox").strip())

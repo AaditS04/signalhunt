@@ -27,25 +27,44 @@ def _text(el, tag: str) -> str:
     return (x.text or "").strip() if x is not None and x.text else ""
 
 
-def bing_news(ctx: RunContext, query: str) -> list[dict]:
-    # qft interval="8" = past month on Bing News; we still re-check every date ourselves.
-    url = ("https://www.bing.com/news/search?format=rss&mkt=en-IN&qft=interval%3d%228%22&q="
-           + urllib.parse.quote_plus(query))
-    resp = net.request(ctx, "bing_news_rss", "news_search", "GET", url, retries=1)
-    root = ET.fromstring(resp.content)
-    out = []
-    for item in root.iter("item"):
-        link = _text(item, "link")
-        parsed = urllib.parse.urlparse(link)
-        real = urllib.parse.parse_qs(parsed.query).get("url", [link])[0]
-        out.append({
-            "title": _text(item, "title"),
-            "url": real,
-            "snippet": _text(item, "description"),
-            "published": _parse_date(_text(item, "pubDate")),
-            "provider": "bing_news_rss",
-            "source_kind": "news",
-        })
+def bing_interval(window_days: int) -> str:
+    """Bing News 'qft interval': 7 = past 24 hours, 8 = past 7 days, 9 = past 30 days (measured 22 Nov 2026:
+    interval 8 returned nothing older than 6 days). Bing has no wider filter; every date is re-checked anyway."""
+    return "7" if window_days <= 1 else "8" if window_days <= 7 else "9"
+
+
+def bing_pages(window_days: int) -> int:
+    """Bing returns about 10 items per page, newest first. One page covered only the last week of a 45-day
+    request, so wider windows read more pages (page 3 held a plant opening 4 weeks old)."""
+    return 1 if window_days <= 7 else 3
+
+
+def bing_news(ctx: RunContext, query: str, window_days: int = 30) -> list[dict]:
+    out, seen = [], set()
+    for page in range(bing_pages(window_days)):
+        url = ("https://www.bing.com/news/search?format=rss&mkt=en-IN&qft=interval%3d%22" + bing_interval(window_days)
+               + "%22" + (f"&first={page * 10 + 1}" if page else "") + "&q=" + urllib.parse.quote_plus(query))
+        resp = net.request(ctx, "bing_news_rss", "news_search", "GET", url, retries=1)
+        root = ET.fromstring(resp.content)
+        new = 0
+        for item in root.iter("item"):
+            link = _text(item, "link")
+            parsed = urllib.parse.urlparse(link)
+            real = urllib.parse.parse_qs(parsed.query).get("url", [link])[0]
+            if real in seen:
+                continue
+            seen.add(real)
+            new += 1
+            out.append({
+                "title": _text(item, "title"),
+                "url": real,
+                "snippet": _text(item, "description"),
+                "published": _parse_date(_text(item, "pubDate")),
+                "provider": "bing_news_rss",
+                "source_kind": "news",
+            })
+        if not new:
+            break  # no further results
     return out
 
 

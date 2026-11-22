@@ -83,7 +83,7 @@ def _search_one(ctx: RunContext, q: str, spec: dict, use_crustdata: bool = True)
     Google News RSS is the fallback when both return nothing."""
     failures, results, providers = [], [], []
     try:
-        res = [r for r in news_rss.bing_news(ctx, q) if usable(r)]
+        res = [r for r in news_rss.bing_news(ctx, q, spec.get("window_days", 30)) if usable(r)]
         results += res
         providers.append(f"bing_news_rss:{len(res)}")
     except Exception as e:  # noqa: BLE001 - malformed XML or HTTP failure must not kill the run

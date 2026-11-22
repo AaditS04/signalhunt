@@ -139,7 +139,7 @@ def test_discovery_falls_back_to_next_provider(monkeypatch):
     from signalhunt.agents import discovery
     from signalhunt.sources import news_rss
 
-    def bing_down(ctx, q):
+    def bing_down(ctx, q, window_days=30):
         raise net.SourceError("bing_news_rss", "HTTP 503")
 
     monkeypatch.setattr(news_rss, "bing_news", bing_down)

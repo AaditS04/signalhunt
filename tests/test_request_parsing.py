@@ -43,3 +43,30 @@ def test_land_allotment_for_a_plant_is_an_expansion():
     spec = {"triggers": ["MANUFACTURING_EXPANSION"], "states": ["Uttar Pradesh"], "industries": []}
     evs = rx.rule_extract(art, spec)
     assert evs and evs[0]["company_name"].startswith("Sugs Lloyd") and evs[0]["location_state"] == "Uttar Pradesh"
+
+
+def test_bing_reads_month_filter_and_three_pages_for_long_windows(monkeypatch):
+    from signalhunt import net
+    from signalhunt.runtime import RunContext
+    from signalhunt.sources import news_rss
+
+    urls = []
+
+    class Resp:
+        def __init__(self, content):
+            self.content = content
+
+    def fake(ctx, provider, op, method, url, **kw):
+        urls.append(url)
+        page = 0 if "first=" not in url else int(url.split("first=")[1].split("&")[0]) // 10
+        items = "".join(f"<item><title>T{page}-{i}</title><link>https://n.example/{page}/{i}</link>"
+                        f"<pubDate>Mon, 26 Oct 2026 10:00:00 GMT</pubDate></item>" for i in range(10))
+        return Resp(f"<rss><channel>{items}</channel></rss>".encode())
+
+    monkeypatch.setattr(net, "request", fake)
+    res = news_rss.bing_news(RunContext(None), "Uttar Pradesh new manufacturing plant", window_days=45)
+    assert len(res) == 30 and len(urls) == 3
+    assert all("interval%3d%229%22" in u for u in urls) and "first=21" in urls[2]
+    urls.clear()
+    news_rss.bing_news(RunContext(None), "x", window_days=7)
+    assert len(urls) == 1 and "interval%3d%228%22" in urls[0]
