@@ -70,3 +70,59 @@ def test_bing_reads_month_filter_and_three_pages_for_long_windows(monkeypatch):
     urls.clear()
     news_rss.bing_news(RunContext(None), "x", window_days=7)
     assert len(urls) == 1 and "interval%3d%228%22" in urls[0]
+
+
+# ---------------- ambiguous requests (batch run, 22 Nov 2026)
+import pytest  # noqa: E402
+from datetime import date  # noqa: E402
+
+
+def spec_of(t):
+    return request_parser.validate(request_parser.rule_parse(t), t)
+
+
+@pytest.mark.parametrize("text,states", [
+    ("Find clients expanding in UP and MP in the last 45 days", ["Madhya Pradesh", "Uttar Pradesh"]),
+    ("New plants in central India this month", ["Chhattisgarh", "Madhya Pradesh"]),
+    ("Find leads in south India", ["Andhra Pradesh", "Karnataka", "Kerala", "Tamil Nadu", "Telangana"]),
+    ("Companies opening factories near Bombay", ["Maharashtra"]),
+    ("Warehouse expansions in Delhi NCR", ["Delhi", "Haryana", "Uttar Pradesh"]),
+    ("find companies in maharastra and karnatka", ["Karnataka", "Maharashtra"]),
+    ("new units in TN and AP", ["Andhra Pradesh", "Tamil Nadu"]),
+])
+def test_states_from_abbreviations_regions_aliases_and_typos(text, states):
+    assert sorted(spec_of(text)["states"]) == states
+
+
+def test_lowercase_up_is_a_verb_not_a_state():
+    assert spec_of("companies scaling up plants in Gujarat")["states"] == ["Gujarat"]
+
+
+@pytest.mark.parametrize("text,days", [
+    ("expansions in Gujarat in the last fortnight", 14),
+    ("pharma expanding in Telangana within 60 days", 60),
+    ("e-commerce warehouses in Haryana in the last 1 year", 365),
+    ("plants in Gujarat over the past year", 365),
+    ("plants in Gujarat in the past 3 months", 90),
+])
+def test_window_phrasings(text, days):
+    assert spec_of(text)["window_days"] == days
+
+
+def test_since_a_date():
+    s = spec_of("Show me expansions since October 1 in Gujarat")
+    assert s["window_days"] == (date.today() - date(date.today().year, 10, 1)).days
+
+
+def test_future_window_is_flagged_not_silently_reversed():
+    s = spec_of("Find expansions in the next 30 days in Kerala")
+    assert any("future" in c for c in s["constraints"])
+
+
+def test_cold_chain_means_storage():
+    assert "WAREHOUSE_EXPANSION" in spec_of("new cold chain facilities in Noida")["triggers"]
+
+
+def test_interpretations_are_recorded():
+    s = spec_of("New plants in central India")
+    assert any("central India" in c for c in s["constraints"])

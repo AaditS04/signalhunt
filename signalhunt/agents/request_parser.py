@@ -5,6 +5,7 @@ types, window clamped to 1..365 days). Without an LLM key a rule parser produces
 """
 from __future__ import annotations
 
+import difflib
 import re
 from datetime import date, timedelta
 
@@ -34,29 +35,98 @@ SYSTEM = (
     "constraints: other explicit restrictions, quoted briefly."
 )
 
-WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "six": 6, "seven": 7, "fourteen": 14, "thirty": 30, "sixty": 60, "ninety": 90}
+WORD_NUM = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+            "ten": 10, "twelve": 12, "fourteen": 14, "fifteen": 15, "thirty": 30, "sixty": 60, "ninety": 90}
+UNIT_DAYS = {"day": 1, "week": 7, "fortnight": 14, "month": 30, "quarter": 90, "year": 365}
+MONTHS = {m: i + 1 for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
+
+# Case-sensitive: lower-case "up" is a verb ("scaling up"), "UP" is Uttar Pradesh.
+STATE_ABBR = {"UP": "Uttar Pradesh", "MP": "Madhya Pradesh", "TN": "Tamil Nadu", "AP": "Andhra Pradesh",
+              "WB": "West Bengal", "HP": "Himachal Pradesh", "J&K": "Jammu and Kashmir", "JK": "Jammu and Kashmir"}
+REGIONS = {
+    "central india": ["Madhya Pradesh", "Chhattisgarh"],
+    "south india": ["Tamil Nadu", "Karnataka", "Kerala", "Andhra Pradesh", "Telangana"],
+    "southern india": ["Tamil Nadu", "Karnataka", "Kerala", "Andhra Pradesh", "Telangana"],
+    "north india": ["Delhi", "Haryana", "Punjab", "Uttar Pradesh", "Rajasthan", "Uttarakhand", "Himachal Pradesh"],
+    "northern india": ["Delhi", "Haryana", "Punjab", "Uttar Pradesh", "Rajasthan", "Uttarakhand", "Himachal Pradesh"],
+    "west india": ["Gujarat", "Maharashtra", "Rajasthan", "Goa"],
+    "western india": ["Gujarat", "Maharashtra", "Rajasthan", "Goa"],
+    "east india": ["West Bengal", "Odisha", "Bihar", "Jharkhand"],
+    "eastern india": ["West Bengal", "Odisha", "Bihar", "Jharkhand"],
+    "north east": ["Assam"], "northeast": ["Assam"],
+    "ncr": ["Delhi", "Haryana", "Uttar Pradesh"],
+}
+CITY_ALIASES = {"bombay": "Mumbai", "madras": "Chennai", "calcutta": "Kolkata", "poona": "Pune", "baroda": "Vadodara"}
+
+
+def _window(text: str) -> tuple[int, list[str]]:
+    """Look-back window in days, plus notes on how the wording was read."""
+    t = text.lower()
+    notes = []
+    if re.search(r"\b(?:next|upcoming|coming)\s+(?:\d+|[a-z]+)\s+(?:day|week|month|year)", t):
+        notes.append("the request asks about a future period; news can only report the past, so the past window was searched")
+    m = re.search(r"\bsince\s+(?:(\d{1,2})(?:st|nd|rd|th)?\s+)?([a-z]{3})[a-z]*\.?(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?", t)
+    if m and m.group(2) in MONTHS:
+        today = date.today()
+        day = int(m.group(1) or m.group(3) or 1)
+        try:
+            since = date(today.year, MONTHS[m.group(2)], day)
+        except ValueError:
+            since = date(today.year, MONTHS[m.group(2)], 1)
+        if since > today:
+            since = date(today.year - 1, since.month, since.day)
+        notes.append(f"'since {m.group(0)[6:].strip()}' read as {since.isoformat()}")
+        return max(1, (today - since).days), notes
+    m = re.search(r"\b(?:last|past|previous|within|over)\s+(?:the\s+)?(?:(\d+|[a-z]+)\s+)?"
+                  r"(day|week|fortnight|month|quarter|year)s?\b", t)
+    if m:
+        raw = m.group(1)
+        n = int(raw) if raw and raw.isdigit() else WORD_NUM.get(raw or "a", 1)
+        return n * UNIT_DAYS[m.group(2)], notes
+    return 30, notes
 
 
 def _window_days(text: str) -> int:
+    return _window(text)[0]
+
+
+def _states(text: str) -> tuple[list[str], list[str]]:
     t = text.lower()
-    m = re.search(r"(?:last|past|previous)\s+(\d+|\w+)\s+(day|week|month)s?", t)
-    if m:
-        n_raw, unit = m.group(1), m.group(2)
-        n = int(n_raw) if n_raw.isdigit() else WORD_NUM.get(n_raw, 1)
-        return n * {"day": 1, "week": 7, "month": 30}[unit]
-    if re.search(r"(?:last|past)\s+(week)", t):
-        return 7
-    if re.search(r"(?:last|past)\s+(month)", t):
-        return 30
-    if re.search(r"(?:last|past)\s+(quarter)", t):
-        return 90
-    return 30
+    notes = []
+    found = {s for s in geo.STATE_CITIES if re.search(rf"\b{re.escape(s.lower())}\b", t)}
+    for ab, st in STATE_ABBR.items():
+        if re.search(rf"(?<![A-Za-z&]){re.escape(ab)}(?![A-Za-z&])", text):
+            found.add(st)
+            notes.append(f"'{ab}' read as {st}")
+    for reg, sts in REGIONS.items():
+        if re.search(rf"\b{re.escape(reg)}\b", t):
+            if not any(reg != r2 and reg in r2 and re.search(rf"\b{re.escape(r2)}\b", t) for r2 in REGIONS):
+                found.update(sts)
+                label = "central India" if reg == "central india" else reg
+                notes.append(f"region '{label}' read as {', '.join(sts)}")
+    for alias, city in CITY_ALIASES.items():
+        if re.search(rf"\b{alias}\b", t):
+            st = geo.resolve_state(city)
+            if st:
+                found.add(st)
+                notes.append(f"'{alias.title()}' read as {city}, {st}")
+    # misspelled state names ("maharastra", "karnatka"): close match on words of 6+ letters
+    words = re.findall(r"[a-z]{6,}", t)
+    names = {s.lower().replace(" ", ""): s for s in geo.STATE_CITIES}
+    for w in words:
+        if w in names or any(w in n.lower().split() for n in geo.STATE_CITIES):
+            continue
+        hit = difflib.get_close_matches(w, list(names), n=1, cutoff=0.82)
+        if hit and names[hit[0]] not in found:
+            found.add(names[hit[0]])
+            notes.append(f"'{w}' read as {names[hit[0]]} (spelling)")
+    return sorted(found), notes
 
 
 def rule_parse(text: str) -> dict:
     t = text.lower()
     triggers = []
-    if re.search(r"warehous|storage|godown|logistics park", t):
+    if re.search(r"warehous|storage|godown|logistics park|cold[- ]chain|reefer|refrigerat", t):
         triggers.append("WAREHOUSE_EXPANSION")
     if re.search(r"manufactur|plant|factory|production|facilit", t):
         triggers.append("MANUFACTURING_EXPANSION")
@@ -83,13 +153,14 @@ def rule_parse(text: str) -> dict:
         triggers.append("GEOGRAPHIC_EXPANSION")
     if not triggers:
         triggers = ["WAREHOUSE_EXPANSION", "MANUFACTURING_EXPANSION", "DISTRIBUTION_OPERATIONS"]
-    states = sorted({s for s in geo.STATE_CITIES if re.search(rf"\b{re.escape(s.lower())}\b", t)})
+    states, notes = _states(text)
+    window, wnotes = _window(text)
     cities = sorted({c for c in geo.CITY_TO_STATE if re.search(rf"\b{re.escape(c)}\b", t)})
     # "manufacturing expansion/plant" names a trigger, not an industry restriction
     t_ind = re.sub(r"manufactur\w*\s+(expansion|plant|facilit\w*|unit|capacity)", " ", t)
     industries = [k for k in geo.INDUSTRIES if re.search(rf"\b{re.escape(k)}\b", t_ind)]
     return {"industries": industries, "states": states, "cities": [c.title() for c in cities],
-            "window_days": _window_days(text), "triggers": triggers, "company_characteristics": [], "constraints": []}
+            "window_days": window, "triggers": triggers, "company_characteristics": [], "constraints": notes + wnotes}
 
 
 def validate(spec: dict, text: str) -> dict:
