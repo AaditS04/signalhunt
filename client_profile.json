@@ -1,0 +1,32 @@
+{
+  "_comment": "Client facts are configuration, not code. Organizers can change the client during the build (new rule, new price): edit this file, no code change needed.",
+  "client_name": "Client 3PL Pvt Ltd (replace with the kickoff name)",
+  "description": "Mid-size Indian third-party logistics company",
+  "services": [
+    "Warehousing and contract logistics",
+    "Full-truckload and part-truckload transportation",
+    "E-commerce fulfilment",
+    "Inbound and outbound distribution",
+    "Last-mile delivery"
+  ],
+  "serviceable_states": ["Gujarat", "Rajasthan", "Maharashtra", "Madhya Pradesh", "Karnataka", "Tamil Nadu", "Haryana", "Delhi", "Uttar Pradesh", "Telangana"],
+  "excluded_companies": [
+    "Delhivery", "Blue Dart", "Gati", "TCI Express", "Transport Corporation of India", "Mahindra Logistics",
+    "Allcargo", "VRL Logistics", "Shadowfax", "Ecom Express", "Xpressbees", "Container Corporation of India", "Ritco Logistics"
+  ],
+  "excluded_reason": "Rivals and logistics providers are not prospects.",
+  "sender": {
+    "name": "Business Development Team",
+    "company": "Client 3PL Pvt Ltd",
+    "email": "bd@client3pl.example"
+  },
+  "pricing": {
+    "price_per_qualified_opportunity_inr": 2500,
+    "price_per_booked_meeting_inr": 15000
+  },
+  "rules": [
+    "Never contact a person whose role cannot be sourced.",
+    "Never include personal phone numbers or personal email addresses in reports.",
+    "Every outbound email waits for human approval."
+  ]
+}
