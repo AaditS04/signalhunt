@@ -83,6 +83,96 @@ ever contacted.
 
 ## 6. How it's built
 
+### Architecture at a glance
+
+One request flows through six stages. Each stage hands the next only what it has proved; anything it cannot prove
+is kept with its reason and shown in the dashboard, never silently dropped.
+
+```mermaid
+flowchart TB
+    REQ(["Sales request from the dashboard or CLI"])
+
+    subgraph S1["1 · Understand the request"]
+        direction LR
+        P1["Request parser<br/>states, regions, misspellings<br/>window, triggers, industries"] --> P2["Exclusions and scope<br/>exclude X, not in Delhi<br/>outside India: stop, no spend"]
+    end
+
+    subgraph S2["2 · Find signals"]
+        direction LR
+        D1["News search<br/>Bing News, Google News fallback"] --> D2["Headline screen<br/>dedup, date window<br/>drop fire, court, politics"] --> D3["Fetch article<br/>direct, Crustdata web fetch fallback"]
+    end
+
+    subgraph S3["3 · Prove every fact"]
+        direction LR
+        E1["Extract event<br/>rules by default, Claude optional<br/>every field with a verbatim quote"] --> E2{"Deterministic verifier<br/>quote in page? dated?<br/>in window and state? not a rival?"}
+        E2 -- "CANNOT_VERIFY or REJECTED" --> E3["Kept with its reason<br/>visible in the dashboard"]
+    end
+
+    subgraph S4["4 · Know the company"]
+        direction LR
+        I1["Identity<br/>Crustdata company/identify<br/>exact match, lookalikes kept apart"] --> I2["Cluster and contradictions<br/>company, state, trigger family"] --> I3["Decision-makers<br/>Crustdata person/search"]
+    end
+
+    subgraph S5["5 · Decide if it is worth pursuing"]
+        direction LR
+        Q1["Score<br/>7 weighted parts, reasons shown"] --> Q2["Ground evidence<br/>headcount and job postings"] --> Q3["Lane match<br/>empty trucks, free space"] --> Q4["Reality ladder<br/>announced, funded, hiring, operating"] --> Q5{"Worth winning?<br/>captive group, distress, trend"}
+        Q5 -- "no, or too early" --> Q6["REFUSED or WATCHING<br/>no email drafted"]
+    end
+
+    subgraph S6["6 · Act with a human in the loop"]
+        direction LR
+        A1["Offer or intro draft<br/>payment terms, number guard"] --> A2{"Human approval<br/>named approver<br/>types the recipient"} --> A3["Outbox<br/>sent exactly once"] --> A4["Reply check<br/>impostor guard"] --> A5["Meeting booked<br/>capacity locked"]
+    end
+
+    REQ --> S1 --> S2 --> S3 -- "verified facts only" --> S4 --> S5 --> S6
+
+    classDef gate fill:#fef3c7,stroke:#b45309,color:#1f2937
+    classDef hold fill:#f3f4f6,stroke:#6b7280,color:#1f2937,stroke-dasharray: 4 3
+    classDef io fill:#dbeafe,stroke:#1d4ed8,color:#1f2937
+    class E2,Q5,A2 gate
+    class E3,Q6 hold
+    class REQ,A5 io
+```
+
+**Reliability: what runs underneath every step**
+
+```mermaid
+flowchart LR
+    W["Worker<br/>resumes RUNNING runs on boot"] --> CTX
+
+    subgraph CTX["RunContext wraps every step"]
+        direction TB
+        C1["step key, fn<br/>result memoized in SQLite<br/>after a crash: replay, no repeat calls"]
+        C2["Limits<br/>cost, time, articles, model calls<br/>hit: STOPPED_LIMIT with partial results"]
+    end
+
+    CTX --> NET["net.request<br/>retries with backoff, Retry-After<br/>rate limit per endpoint<br/>circuit breaker per endpoint or site"]
+    NET --> CD[("Crustdata API")]
+    NET --> NEWS[("Bing and Google News RSS")]
+    NET --> WEB[("Publisher pages")]
+    NET --> LED[["Cost ledger<br/>every call: status, latency,<br/>credits, USD and INR"]]
+    LED -. "checked before each step" .-> CTX
+```
+
+**Exactly-once outreach: the life of one email**
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> PENDING_APPROVAL : draft saved once, unique key
+    PENDING_APPROVAL --> APPROVED : human approves
+    PENDING_APPROVAL --> REJECTED : human rejects
+    APPROVED --> SENDING : atomic claim
+    SENDING --> SENT : outbox file created once
+    SENDING --> SENDING : crash, reconcile on boot
+    SENT --> [*]
+    REJECTED --> [*]
+```
+
+The full component diagram, with every module and table, is in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Components
+
 * **Agents and steps:** one durable pipeline (`workflow.execute_run`) of narrow steps, not a free-roaming agent. Request
   parser, discovery, fetcher, extractor (rules by default, Claude optional), deterministic verifier, identity resolver,
   de-dup, decision-makers, then the capacity layers (`lanes`, `ladder`, `trust`, `terms`), the offer, approval, send,
@@ -104,8 +194,6 @@ ever contacted.
 * **Where state lives:** SQLite (WAL) in `data/signalhunt.db`: runs, step cache, opportunities, candidates, actions,
   replies, capacity offers, ledger, logs. Outbox files (`data/outbox/<key>.json`, `meeting_<key>.ics`) are created with
   `O_EXCL`. Client facts live in `client_profile.json`; limits and keys in `.env`.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the diagram.
 
 ## 7. Sources and checks
 
