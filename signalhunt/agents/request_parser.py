@@ -72,6 +72,15 @@ def rule_parse(text: str) -> dict:
         triggers.append("FUNDING_OR_INVESTMENT")
     if re.search(r"\bexpan", t) and not triggers:
         triggers += ["WAREHOUSE_EXPANSION", "MANUFACTURING_EXPANSION", "GEOGRAPHIC_EXPANSION"]
+    # A generic "expanding" (not "warehouse expansion") or a need for trucks means shippers with new sites:
+    # keep plant expansions even when another word (e.g. "cold storage") already matched a trigger.
+    generic_expansion = re.search(r"(?<!warehouse )(?<!manufacturing )(?<!plant )(?<!capacity )\bexpan\w*|"
+                                  r"\bgrowing\b|\bscal\w* up\b", t)
+    needs_freight = re.search(r"\btruck|\blorr|\bfreight|\btransport|\bhaul|\bshipment|\bdispatch|\bfleet", t)
+    if (generic_expansion or needs_freight) and "MANUFACTURING_EXPANSION" not in triggers:
+        triggers.append("MANUFACTURING_EXPANSION")
+    if generic_expansion and "GEOGRAPHIC_EXPANSION" not in triggers:
+        triggers.append("GEOGRAPHIC_EXPANSION")
     if not triggers:
         triggers = ["WAREHOUSE_EXPANSION", "MANUFACTURING_EXPANSION", "DISTRIBUTION_OPERATIONS"]
     states = sorted({s for s in geo.STATE_CITIES if re.search(rf"\b{re.escape(s.lower())}\b", t)})

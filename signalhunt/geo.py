@@ -72,7 +72,7 @@ TRIGGER_KEYWORDS: dict[str, list[str]] = {
 }
 
 QUERY_TEMPLATES: dict[str, list[str]] = {
-    "WAREHOUSE_EXPANSION": ["{geo} new warehouse", "{geo} warehouse expansion company"],
+    "WAREHOUSE_EXPANSION": ["{geo} new warehouse", "{geo} cold storage facility", "{geo} warehouse expansion company"],
     "MANUFACTURING_EXPANSION": ["{geo} new manufacturing plant", "{geo} plant expansion investment crore",
                                 "{geo} factory inaugurated"],
     "GEOGRAPHIC_EXPANSION": ["company expands operations {geo}"],
