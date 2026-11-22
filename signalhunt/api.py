@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import approvals, db, workflow
+from . import approvals, db, replies, workflow
 from .agents.scoring import ASSUMPTIONS, WEIGHTS
 from .config import ROOT, client_profile, settings
 
@@ -42,6 +42,11 @@ class ApproveIn(BaseModel):
     to_email: str
     subject: str | None = None
     body: str | None = None
+
+
+class ReplyIn(BaseModel):
+    from_email: str
+    text: str
 
 
 class RejectIn(BaseModel):
@@ -123,6 +128,7 @@ def opportunity(opp_id: str):
         raise HTTPException(404, "not found")
     d = db.loads(r["data_json"], {})
     d["actions"] = [a for a in approvals.list_actions() if a["opp_id"] == opp_id]
+    d["replies"] = replies.list_replies(opp_id)
     return d
 
 
@@ -153,6 +159,24 @@ def reject_action(action_id: str, body: RejectIn):
         return approvals.reject(action_id, body.approver, body.reason)
     except approvals.ApprovalError as e:
         raise HTTPException(409, str(e))
+
+
+@app.post("/api/actions/{action_id}/reply")
+def reply_action(action_id: str, body: ReplyIn):
+    try:
+        return replies.record_reply(action_id, body.from_email, body.text)
+    except replies.ReplyError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/replies")
+def list_replies(opp_id: str | None = None):
+    return replies.list_replies(opp_id)
+
+
+@app.get("/api/capacity")
+def capacity():
+    return workflow.capacity_board()
 
 
 @app.get("/api/stats")

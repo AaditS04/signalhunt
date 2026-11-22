@@ -4,6 +4,7 @@
   python -m signalhunt.cli resume            # finish any run interrupted by a crash
   python -m signalhunt.cli result RUN_ID
   python -m signalhunt.cli approve ACTION_ID --by "Name" --to buyer@company.com
+  python -m signalhunt.cli reply ACTION_ID --from buyer@company.com --text "Thursday 3 PM works"
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import argparse
 import json
 import sys
 
-from . import approvals, db, workflow
+from . import approvals, db, replies, workflow
 
 
 def main(argv=None) -> int:
@@ -22,6 +23,8 @@ def main(argv=None) -> int:
     g = sub.add_parser("result"); g.add_argument("run_id"); g.add_argument("--out")
     a = sub.add_parser("approve"); a.add_argument("action_id"); a.add_argument("--by", required=True); a.add_argument("--to", required=True)
     sub.add_parser("actions")
+    rp = sub.add_parser("reply"); rp.add_argument("action_id"); rp.add_argument("--from", dest="from_email", required=True)
+    rp.add_argument("--text", required=True)
     args = ap.parse_args(argv)
     db.init_db()
     if args.cmd == "run":
@@ -40,6 +43,9 @@ def main(argv=None) -> int:
         return _emit(workflow.run_result(args.run_id), args.out)
     if args.cmd == "approve":
         print(json.dumps(approvals.approve(args.action_id, args.by, args.to), indent=2, default=str))
+        return 0
+    if args.cmd == "reply":
+        print(json.dumps(replies.record_reply(args.action_id, args.from_email, args.text), indent=2, default=str))
         return 0
     if args.cmd == "actions":
         print(json.dumps(approvals.list_actions(), indent=2, default=str))
