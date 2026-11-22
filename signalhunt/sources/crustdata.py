@@ -164,3 +164,56 @@ def search_decision_makers(ctx: RunContext, company_id: int, limit: int = 10) ->
     }
     data = _post(ctx, "/person/search", payload, "person_search")
     return (data or {}).get("profiles", []) or []
+
+
+def company_profile(ctx: RunContext, company_id: int) -> dict | None:
+    """Headcount over time and by region (one call, 2 credits). Used for the team-trend check and for
+    'presence at the far end of a lane' (employees in the destination state)."""
+    data = _post(ctx, "/company/enrich",
+                 {"crustdata_company_ids": [int(company_id)], "fields": ["basic_info", "headcount"]},
+                 "company_enrich_headcount")
+    for entry in data or []:
+        for m in entry.get("matches", []) or []:
+            cd = m.get("company_data") or {}
+            hc = cd.get("headcount") or {}
+            return {
+                "crustdata_company_id": cd.get("crustdata_company_id"),
+                "name": (cd.get("basic_info") or {}).get("name"),
+                "headcount_total": hc.get("total"),
+                "growth_percent": hc.get("growth_percent") or {},
+                "growth_absolute": hc.get("growth_absolute") or {},
+                "by_region_absolute": hc.get("by_region_absolute") or {},
+                "largest_headcount_country": hc.get("largest_headcount_country"),
+            }
+    return None
+
+
+def job_postings(ctx: RunContext, company_id: int, since_date: str, limit: int = 50) -> dict:
+    """Job postings by one company (resolved id only) added since `since_date` (YYYY-MM-DD).
+    Location filtering happens in code because the API's fuzzy location match is noisy
+    (in our test 'Pune' matched a posting in Pine Brook, NJ)."""
+    payload = {
+        "filters": {"op": "and", "conditions": [
+            {"field": "company.basic_info.crustdata_company_id", "type": "=", "value": int(company_id)},
+            {"field": "metadata.date_added", "type": ">", "value": since_date},
+        ]},
+        "limit": limit,
+        "sorts": [{"field": "metadata.date_added", "order": "desc"}],
+    }
+    data = _post(ctx, "/job/search", payload, "job_search") or {}
+    rows = data.get("job_listings") or data.get("jobs") or data.get("results") or []
+    out = []
+    for r in rows:
+        jd = r.get("job_details") or {}
+        loc = r.get("location") or {}
+        md = r.get("metadata") or {}
+        out.append({
+            "title": jd.get("title") or r.get("title"),
+            "url": jd.get("url") or r.get("url"),
+            "location_raw": (loc.get("raw") if isinstance(loc, dict) else loc) or "",
+            "city": loc.get("city") if isinstance(loc, dict) else None,
+            "state": loc.get("state") if isinstance(loc, dict) else None,
+            "country": loc.get("country") if isinstance(loc, dict) else None,
+            "date_added": (md.get("date_added") or r.get("date_added") or "")[:10],
+        })
+    return {"postings": out, "total_count": data.get("total_count")}
