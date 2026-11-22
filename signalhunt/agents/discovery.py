@@ -111,9 +111,17 @@ def _search_one(ctx: RunContext, q: str, spec: dict, use_crustdata: bool = True)
     return out
 
 
+# Headlines that are never a buying trigger: they still get read if budget allows, but last.
+NOISE_TITLE = re.compile(r"\b(fire|blaze|killed|dies|died|death|murder|arrest\w*|attack\w*|knife|racket|busted|raid\w*|"
+                         r"court|bail|election\w*|bjp|congress|samajwadi|owaisi|akhilesh|poll|minister slams|"
+                         r"accident|flood\w*|liquor|spurious|crime|police)\b", re.I)
+
+
 def relevance(c: dict, spec: dict) -> float:
     text = f"{c['title']} {c.get('snippet', '')}".lower()
     s = 0.0
+    if NOISE_TITLE.search(c.get("title") or ""):
+        s -= 3.0
     for t in spec["triggers"]:
         if any(k in text for k in geo.TRIGGER_KEYWORDS.get(t, [])):
             s += 1.0

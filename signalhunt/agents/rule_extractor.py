@@ -27,7 +27,8 @@ AUX = (r"(?:(?:has|have|had|will|would|is|are|was|were|plans\s+to|planning\s+to|
 VERB = (r"(?:open|announc|set(?:s|ting)?\s+up|launch|inaugurat|commission|invest|expand|unveil|start|build|built|construct|"
         r"establish|add|break(?:s|ing)?\s+ground|lay|laid|begin|began|commenc|acquir|nearing|bet|enter|roll(?:s|ed|ing)?\s+out|"
         r"scal(?:e|es|ed|ing)\s+up|ramp|develop|plan|signs?\b|signed|commits?|committed|unveil|operationali[sz]|"
-        r"doubl|tripl|increas|boost|strengthen)\w*")
+        r"doubl|tripl|increas|boost|strengthen|secur(?=\w*\s+[^.]{0,70}?\b(?:land|plot|site)\b)|"
+        r"receiv(?=\w*\s+(?:a\s+|the\s+)?(?:land|plot)))\w*")
 ACTIVE_RE = re.compile(rf"({NAME})\s*(?:\([^)]{{1,40}}\)\s*)?(?:,[^,]{{0,90}},\s*)?{AUX}{VERB}")
 PASSIVE_RE = re.compile(rf"(?:being\s+|been\s+|is\s+|was\s+|will\s+be\s+)?(?:established|set\s+up|built|developed|commissioned|"
                         rf"opened|launched|operated|constructed|promoted|owned|run|inaugurated|unveiled)\s+by\s+(?:the\s+)?({NAME})")
