@@ -98,6 +98,25 @@ CREATE TABLE IF NOT EXISTS logs (
     step TEXT,
     message TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS replies (
+    id TEXT PRIMARY KEY,               -- sha(action_id, from, text): the same reply recorded twice is one row
+    action_id TEXT NOT NULL,
+    opp_id TEXT NOT NULL,
+    from_email TEXT NOT NULL,
+    text TEXT NOT NULL,
+    verdict TEXT NOT NULL,             -- BOOKED HELD_IMPOSTOR_RISK HELD_DOMAIN_MISMATCH HELD_NO_TIME HELD_CAPACITY HELD_CANNOT_VERIFY
+    detail_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS asset_offers (
+    asset_id TEXT NOT NULL,
+    opp_id TEXT NOT NULL,
+    action_id TEXT,
+    status TEXT NOT NULL,              -- OFFERED (meeting booked on this capacity)
+    meeting_at TEXT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (asset_id, opp_id)
+);
 CREATE INDEX IF NOT EXISTS idx_ledger_run ON ledger(run_id);
 CREATE INDEX IF NOT EXISTS idx_logs_run ON logs(run_id);
 CREATE INDEX IF NOT EXISTS idx_actions_opp ON actions(opp_id);

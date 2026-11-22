@@ -38,9 +38,10 @@ def idem_key(opp_id: str) -> str:
     return sha("email", opp_id, n=24)
 
 
-def create_draft(opp_id: str, recipient: dict | None, subject: str, body: str, run_id: str | None) -> dict:
+def create_draft(opp_id: str, recipient: dict | None, subject: str, body: str, run_id: str | None,
+                 meta: dict | None = None) -> dict:
     key = idem_key(opp_id)
-    payload = {"recipient": recipient, "subject": subject, "body": body, "drafted_in_run": run_id}
+    payload = {"recipient": recipient, "subject": subject, "body": body, "drafted_in_run": run_id, **(meta or {})}
     with db.connect() as con:
         con.execute(
             "INSERT OR IGNORE INTO actions(id, idempotency_key, opp_id, kind, payload_json, status, created_at, updated_at)"
@@ -49,6 +50,17 @@ def create_draft(opp_id: str, recipient: dict | None, subject: str, body: str, r
         )
         row = con.execute("SELECT * FROM actions WHERE idempotency_key=?", (key,)).fetchone()
     return dict(row)
+
+
+def recipient_allowed(email: str) -> bool:
+    """Event rule: never contact a real outside person. ALLOWED_RECIPIENTS lists teammate/organiser addresses
+    or @domains. In sandbox mode (nothing leaves the machine) an empty list allows any address; in smtp mode
+    an empty list allows none."""
+    email = (email or "").strip().lower()
+    allowed = [a.strip().lower() for a in os.getenv("ALLOWED_RECIPIENTS", "").split(",") if a.strip()]
+    if not allowed:
+        return settings().outreach_mode != "smtp"
+    return any(email == a or (a.startswith("@") and email.endswith(a)) for a in allowed)
 
 
 def get(action_id: str) -> dict | None:
@@ -75,6 +87,9 @@ def approve(action_id: str, approver: str, to_email: str, subject: str | None = 
         raise ApprovalError("approver name is required")
     if not EMAIL_RE.match((to_email or "").strip()):
         raise ApprovalError("a valid recipient email typed by the approver is required (SignalHunt never guesses addresses)")
+    if not recipient_allowed(to_email):
+        raise ApprovalError(f"{to_email.strip()} is not on ALLOWED_RECIPIENTS: during the event agents may only contact "
+                            "teammates and organisers (event rule), so every send is checked against this allow-list")
     a = get(action_id)
     if not a:
         raise ApprovalError("action not found")

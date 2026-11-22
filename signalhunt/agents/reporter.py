@@ -113,3 +113,89 @@ def write(ctx: RunContext, opp: dict, client: dict) -> dict:
 
 def label(event_type: str) -> str:
     return geo.EVENT_TYPES.get(event_type, event_type)
+
+
+# ---------------------------------------------------------------- the offer (capacity-first)
+WEEKDAYS = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday", "Fri": "Friday",
+            "Sat": "Saturday", "Sun": "Sunday"}
+
+
+def _inr(n: int | float) -> str:
+    """Indian digit grouping: 52000 -> 52,000; 880000 -> 8,80,000."""
+    n = int(round(n))
+    s = str(n)
+    if len(s) <= 3:
+        return s
+    head, tail = s[:-3], s[-3:]
+    parts = []
+    while len(head) > 2:
+        parts.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        parts.insert(0, head)
+    return ",".join(parts) + "," + tail
+
+
+def offer(opp: dict, client: dict) -> dict:
+    """Deterministic offer built only from verified facts and the client's own profile numbers.
+    Every sentence is checked: a sentence holding a number that is in neither set is removed, not rewritten."""
+    m = opp["lane_match"]["best"]
+    a = m["asset"]
+    terms = opp["terms"]
+    lim = client.get("service_limits") or {}
+    card = client.get("trust_card") or {}
+    sender = client.get("sender", {})
+    person = opp["decision_makers"]["people"][0] if opp["decision_makers"].get("people") else None
+    greet = f"Dear {person['name'].split()[0]}," if person and person.get("name") else "Hello,"
+    src = opp["evidence"][0] if opp["evidence"] else {}
+    place = ", ".join(opp["cities"]) or opp["state"]
+    trigger = (f"I read in {src.get('source_name', 'the press')} ({src.get('published', '')}) about "
+               f"{opp['company_name']}'s {opp['event_label'].lower()} in {place}.")
+    if m["asset_type"] == "lane":
+        days = ", ".join(WEEKDAYS.get(d, d) for d in a.get("days", []))
+        price = max(a["rate_inr_per_trip"], a["floor_inr_per_trip"])
+        slot = (f"We can guarantee a {a['truck_type']} pickup in {a['origin_city']} every {days}, with a "
+                f"{lim.get('pickup_window_hours', 4)}-hour pickup window, delivering to "
+                f"{' or '.join(a.get('dest_cities', []))}.")
+        price_s = f"Price: INR {_inr(price)} per trip, for up to {a['empty_trucks_per_week']} trucks a week."
+        subject = f"Guaranteed {a['origin_city']} to {a['dest_cities'][0]} pickups for {opp['company_name']}"
+    else:
+        price = max(a["rate_inr_per_pallet_month"], a["floor_inr_per_pallet_month"])
+        slot = (f"We have {a['pallets_free']} {a['type']} pallet positions free in {a['city']} from {a['from']}, "
+                f"with inbound and outbound pickups inside a {lim.get('pickup_window_hours', 4)}-hour window.")
+        price_s = f"Price: INR {_inr(price)} per pallet per month."
+        subject = f"{a['type'].capitalize()} space in {a['city']} for {opp['company_name']}"
+    promise = (f"If we miss a pickup window, the next invoice carries a {lim.get('missed_pickup_credit_pct', 10)} "
+               f"percent credit.")
+    if terms["tier"] == "STANDARD_CREDIT":
+        pay = f"Payment terms: {terms['credit_days']} days credit."
+    elif terms["tier"] == "PART_ADVANCE":
+        pay = f"Payment terms: {terms['advance_pct']} percent advance, balance within {terms['credit_days']} days."
+    else:
+        pay = "Payment terms: full advance."
+    trust = (f"About us: {card.get('legal_name', sender.get('company', ''))}, operating for "
+             f"{card.get('years_operating', '')} years with {card.get('fleet_owned', '')} owned trucks"
+             + (", MSME (Udyam) registered." if (client.get("payment_policy") or {}).get("msme_registered") else "."))
+    sentences = [trigger, slot, price_s, promise, pay, *terms.get("clauses", []), trust,
+                 "Would a 20-minute call this week work to confirm volumes?"]
+    allowed = " ".join([*(f"{f['value']} {f['quote']} {f.get('published', '')}" for f in opp["evidence"]),
+                        str(client), str(opp.get("terms")), opp["company_name"], place])
+    kept, removed = [], []
+    for s in sentences:
+        bad = guard_numbers(s, allowed)
+        (removed if bad else kept).append(s if not bad else {"sentence": s, "unsupported_numbers": bad})
+    body = (f"{greet}\n\n" + "\n\n".join([kept[0]] + [" ".join(kept[1:-1])] + [kept[-1]]) +
+            f"\n\nRegards,\n{sender.get('name', '')}\n{sender.get('company', '')}")
+    return {
+        "email_subject": subject,
+        "email_body": body,
+        "offer": {"asset_id": m["asset_id"], "asset_type": m["asset_type"], "price_inr": price,
+                  "floor_inr": a.get("floor_inr_per_trip") or a.get("floor_inr_per_pallet_month"),
+                  "price_at_or_above_floor": True, "terms_tier": terms["tier"], "service_promise": promise},
+        "removed_sentences": removed,
+        "why_3pl_demand": (f"{opp['company_name']}'s {opp['event_label'].lower()} in {place} matches capacity "
+                           f"{m['asset_id']} ({m['strength']}). This is an inference from the event, not a stated need."),
+        "logistics_requirements": TEMPLATES.get(opp["family"], TEMPLATES["facility"]),
+        "sales_approach": "Lead with the guaranteed slot on the matched capacity; terms are set before the call.",
+        "method": "offer_template",
+    }

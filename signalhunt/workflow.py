@@ -15,7 +15,8 @@ import uuid
 from datetime import datetime, timezone
 
 from . import approvals, db, geo
-from .agents import dedup, discovery, extractor, identity, people, reporter, request_parser, scoring, verifier
+from .agents import (dedup, discovery, extractor, ground, identity, ladder, lanes, people, reporter, request_parser,
+                     scoring, terms, trust, verifier)
 from .config import client_profile, settings
 from .runtime import LimitExceeded, RunContext, sha
 from .sources import fetcher
@@ -164,7 +165,25 @@ def execute_run(run_id: str) -> dict:
                     limited_reason = str(e)
                     ppl = {"status": "CANNOT_VERIFY", "people": [], "missing": f"skipped: {e}"}
             opp = _assemble(cl, ident, ppl, spec, client)
-            if limited_reason:
+            if not limited_reason:
+                try:
+                    _qualify(ctx, opp, client)
+                except LimitExceeded as e:
+                    limited_reason = str(e)
+            if limited_reason and "outreach" not in opp:
+                _qualify(ctx, opp, client, offline=True)
+            out = opp["outreach"]
+            if out["status"] in ("REFUSED", "WATCHING"):
+                opp["report"] = reporter.template(opp, client, None)
+                opp["report"]["email_body"] = ""
+                _save_opportunity(run_id, opp)
+                opp_ids.append(opp["id"])
+                ctx.log("INFO", "qualify", f"{opp['company_name']}: {out['status']} ({out['reason'][:160]})")
+                _progress(ctx, prog, opportunities=len(opp_ids), phase="writing reports")
+                continue
+            if out["status"] == "OFFER":
+                opp["report"] = reporter.offer(opp, client)
+            elif limited_reason:
                 opp["report"] = reporter.template(opp, client, ppl["people"][0] if ppl.get("people") else None)
             else:
                 try:
@@ -175,7 +194,9 @@ def execute_run(run_id: str) -> dict:
             _save_opportunity(run_id, opp)
             person = ppl["people"][0] if ppl.get("people") else None
             act = approvals.create_draft(opp["id"], person and {"name": person["name"], "title": person["title"]},
-                                         opp["report"]["email_subject"], opp["report"]["email_body"], run_id)
+                                         opp["report"]["email_subject"], opp["report"]["email_body"], run_id,
+                                         {"kind": out["status"], "hold_reason": out.get("hold_reason"),
+                                          "asset_id": out.get("asset_id")})
             opp_ids.append(opp["id"])
             _progress(ctx, prog, opportunities=len(opp_ids), phase="writing reports")
             _crash_point("after_first_opportunity")
@@ -329,6 +350,40 @@ def _assemble(cl: dict, ident: dict, ppl: dict, spec: dict, client: dict) -> dic
     }
 
 
+def _qualify(ctx: RunContext, opp: dict, client: dict, offline: bool = False) -> None:
+    """Layers 1 to 3 on one opportunity: lane match, reality ladder, worth-winning verdict, payment terms.
+    Then the outreach decision: REFUSED and WATCHING get no draft; a capacity match gets a priced OFFER;
+    no capacity match gets a general INTRO. A thin-evidence buyer is held for a person, never refused."""
+    ident = opp["identity"]
+    if offline:
+        sig = {"available": False, "profile": None, "jobs": None, "missing": ["run stopped at its limit"]}
+        dis = {"checked": False, "hits": [], "note": "run stopped at its limit"}
+    else:
+        sig = ctx.step(f"signals:{opp['id']}", lambda: ground.fetch(ctx, ident))
+        dis = trust.distress_news(ctx, opp["company_name"])
+    opp["ground"] = {"missing": sig.get("missing"), "retrieved_on": sig.get("retrieved_on"),
+                     "headcount_total": (sig.get("profile") or {}).get("headcount_total"),
+                     "postings_60d": len((sig.get("jobs") or {}).get("postings", []))}
+    opp["lane_match"] = lanes.match(opp, client, sig)
+    opp["ladder"] = ladder.place(opp, sig, client)
+    opp["trust"] = trust.verdict(opp, client, sig, dis)
+    opp["terms"] = terms.decide(opp, client, opp["trust"], sig)
+    v = opp["trust"]["verdict"]
+    best = opp["lane_match"]["best"]
+    if v == "DONT_PURSUE":
+        out = {"status": "REFUSED", "reason": "; ".join(opp["trust"]["reasons"])}
+    elif opp["ladder"]["watching"]:
+        out = {"status": "WATCHING", "reason": f"reality ladder at {opp['ladder']['rung']}, below "
+                                               f"{opp['ladder']['outreach_min_rung']}: " + "; ".join(opp["ladder"]["reasons"])}
+    elif best:
+        out = {"status": "OFFER", "reason": f"matched {best['asset_id']} ({best['strength']})", "asset_id": best["asset_id"]}
+    else:
+        out = {"status": "INTRO", "reason": "no capacity match: general introduction only"}
+    if out["status"] in ("OFFER", "INTRO") and v == "CANNOT_VERIFY":
+        out["hold_reason"] = "buyer not fully verified: " + "; ".join(opp["trust"]["missing"])[:300]
+    opp["outreach"] = out
+
+
 def _save_candidate(run_id: str, cand_id: str, status: str, reason: str, data: dict) -> None:
     with db.connect() as con:
         con.execute("INSERT OR REPLACE INTO run_candidates(run_id, cand_id, status, reason, data_json) VALUES (?,?,?,?,?)",
@@ -380,6 +435,11 @@ def run_result(run_id: str) -> dict:
         "opportunities": opps,
         "cannot_verify": [brief(c) for c in cands if c["status"] == "CANNOT_VERIFY"],
         "rejected": [brief(c) for c in cands if c["status"] == "REJECTED"],
+        "refused": [{"company": o["company_name"], "reason": o["outreach"]["reason"], "opp_id": o["id"]}
+                    for o in opps if (o.get("outreach") or {}).get("status") == "REFUSED"],
+        "watching": [{"company": o["company_name"], "rung": o["ladder"]["rung"], "reason": o["outreach"]["reason"],
+                      "opp_id": o["id"]} for o in opps if (o.get("outreach") or {}).get("status") == "WATCHING"],
+        "capacity_board": capacity_board(),
         "duplicates": [brief(c) for c in cands if c["status"] == "DUPLICATE"],
         "cost": {"total_usd": round(total, 5), "total_inr": round(total * cfg.usd_inr, 2),
                  "by_provider": [dict(r) for r in led],
@@ -388,6 +448,19 @@ def run_result(run_id: str) -> dict:
         "progress": run["progress"],
         "error": run.get("error"),
     }
+
+
+def capacity_board() -> list[dict]:
+    """Each empty lane and free space, with what has been offered on it (a booked meeting marks it OFFERED)."""
+    cap = client_profile().get("capacity") or {}
+    with db.connect() as con:
+        rows = [dict(r) for r in con.execute("SELECT * FROM asset_offers").fetchall()]
+    board = []
+    for a in cap.get("lanes", []) + cap.get("spaces", []):
+        offered = [r for r in rows if r["asset_id"] == a["id"]]
+        board.append({"asset_id": a["id"], "asset": a, "status": "OFFERED" if offered else "OPEN",
+                      "offers": offered})
+    return board
 
 
 # ---------------------------------------------------------------- background worker
