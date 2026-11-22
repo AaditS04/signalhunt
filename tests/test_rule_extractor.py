@@ -155,3 +155,20 @@ def test_title_case_headline_in_body_does_not_rename_company():
     ]:
         evs = rule_extract({"title": title, "text": body}, {**SPEC, "states": ["Telangana", "Odisha"]})
         assert names(evs) == [want], (title, names(evs))
+
+
+# ---- regressions from the post-merge live run (2026-11-22, 8 requests) ----
+from signalhunt.agents.rule_extractor import clean_company, company_score  # noqa: E402
+
+
+def test_units_codes_and_generic_phrases_are_not_companies():
+    for bad in ["GWh", "MPP-5", "Group", "Extra High Voltage"]:
+        assert company_score(bad, "active", f"{bad} will set up a new plant", "") <= -1, bad
+    assert company_score("Uno Minda", "active", "Uno Minda will set up a new plant", "Uno Minda plant") > -1
+
+
+def test_place_prefix_and_joined_companies_are_cleaned():
+    assert clean_company("Gurugram-headquartered Accord Transformer & Switchgear") == "Accord Transformer & Switchgear"
+    assert clean_company("Hindustan Unilever and Vardhman") == "Hindustan Unilever"
+    assert clean_company("Procter and Gamble") == "Procter and Gamble"
+

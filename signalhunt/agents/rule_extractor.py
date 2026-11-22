@@ -105,7 +105,12 @@ REGION_WORDS = {"asia", "world", "country", "nation", "europe", "africa", "south
 GENERIC_NOUNS = {"ethanol", "steel", "cement", "solar", "lpg", "cng", "green", "hydrogen", "ammonia", "battery", "plant",
                  "factory", "unit", "project", "facility", "warehouse", "park", "phase", "hub", "sez", "industrial",
                  "logistics", "manufacturing", "investment", "expansion", "capacity", "semiconductor", "chip", "ev",
-                 "textile", "pharma", "dairy", "sugar", "paper", "power", "energy", "fertiliser", "fertilizer"}
+                 "textile", "pharma", "dairy", "sugar", "paper", "power", "energy", "fertiliser", "fertilizer",
+                 "group", "company", "firm", "mw", "gw", "gwh", "mwh", "kw", "kv", "mva", "mtpa", "tpa", "crore", "lakh"}
+# descriptive words: a name made only of these and GENERIC_NOUNS ("Extra High Voltage") is not a company
+DESCRIPTIVE = {"extra", "high", "ultra", "low", "mega", "super", "large", "small", "new", "first", "voltage", "speed",
+               "grade", "advanced", "integrated", "green", "clean", "smart", "digital", "national", "regional"}
+PLANT_CODE = re.compile(r"^[A-Z]{2,6}[- ]?\d+[A-Z]?$")  # "MPP-5", "Unit 3"-style site codes
 GOV_RE = re.compile(r"^(?:Ministry|Department|Dept\.?|Government|Govt\.?|Directorate|Cabinet|Commission|Council|Authority|"
                     r"Municipal|Nagar Nigam|Office of)\b|\b(?:Ministry|Department of|Development Authority|"
                     r"Industrial Development Corporation|Municipal Corporation)\b")
@@ -127,7 +132,8 @@ def clean_company(name: str) -> str:
                      or (not legal and words[0] == "State")
                      # "India's ReNew Energy Global", "Asia's largest" -> drop the possessive region
                      or (words[0].endswith("'s") and (_is_place(words[0][:-2]) or words[0][:-2] in STOP_LEADS))
-                     or words[0].endswith("-based") or words[0].lower() in ("its", "their", "the")):
+                     or re.search(r"-(?:based|headquartered|born|owned|backed)$", words[0])
+                     or words[0].lower() in ("its", "their", "the")):
         if legal and words[0] == "State" and len(words) > 1:  # "State Bank of India Limited"
             break
         words = words[1:]
@@ -143,6 +149,11 @@ def clean_company(name: str) -> str:
     if name and (name.split()[0].lower() in ("and", "or", "of", "for", "with", "to") or
                  name.split()[-1].lower() in ("division", "unit", "segment", "department", "plant", "facility", "line")):
         return ""
+    # "Hindustan Unilever and Vardhman" is two companies: keep the first. One-word left sides are left alone
+    # because they are usually a single name ("Procter and Gamble", "Larsen and Toubro").
+    left, sep, right = name.partition(" and ")
+    if sep and len(left.split()) >= 2 and right[:1].isupper():
+        name = left
     return name
 
 
@@ -162,6 +173,8 @@ def company_score(name: str, how: str, sentence: str, title: str) -> float:
         return -99  # ministries, departments and development authorities are not prospects
     lw = {w.lower().strip(".,") for w in words}
     if len(words) == 1 and (name.lower() in REGION_WORDS or name.lower() in GENERIC_NOUNS):
+        return -99
+    if all(w.lower().strip(".,") in GENERIC_NOUNS | DESCRIPTIVE for w in words) or PLANT_CODE.match(name):
         return -99
     # a lone capitalised word ("Vithalapur", "Beyond") is usually a place or a sentence opener, not a company,
     # unless it is an acronym or the headline names it too
