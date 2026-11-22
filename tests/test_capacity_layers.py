@@ -186,3 +186,30 @@ def test_nclt_restructuring_is_not_distress():
     assert not trust.DISTRESS_HARD.search("NCLT approves merger of two subsidiaries")
     assert trust.DISTRESS_HARD.search("NCLT admits insolvency plea against Orbit Pharma")
     assert trust.DISTRESS_HARD.search("Orbit Pharma admitted to CIRP")
+
+
+@pytest.mark.parametrize("title,company,subject", [
+    # live wrong refusals (22 Nov 2026): the company is a creditor, an associate, or cleared
+    ("NCLT Hyderabad Condones NTPC's 408-Day Delay, Directs Liquidator", "NTPC Limited", False),
+    ("Ashok Leyland associate ALJD liquidated after NCLT order", "Ashok Leyland", False),
+    ("Orissa High Court quashes pollution case against Tata Steel over liquidation claim", "Tata Steel", False),
+    # real distress about the company itself
+    ("Orbit Pharma admitted to insolvency by NCLT", "Orbit Pharma", True),
+    ("NCLT admits insolvency plea against Orbit Pharma", "Orbit Pharma", True),
+    ("Orbit Pharma files for bankruptcy", "Orbit Pharma", True),
+])
+def test_news_refusal_needs_the_company_as_subject(title, company, subject):
+    assert trust.is_subject_of_insolvency(title, company) is subject
+
+
+def test_unclear_distress_headline_is_a_caution_not_a_refusal():
+    news = {"checked": True, "hits": [{"title": "Ashok Leyland associate ALJD liquidated after NCLT order",
+                                       "url": "https://n.example", "record_date": "2026-11-01", "hard": False}]}
+    v = trust.verdict(opp(name="Ashok Leyland"), CLIENT, sig(), news)
+    assert v["verdict"] == "PURSUE_WITH_CAUTION" and "a person reads it" in v["reasons"][0]
+
+
+def test_fragments_and_divisions_are_not_companies():
+    from signalhunt.agents import rule_extractor as rx
+    assert rx.clean_company("and Mysuru") == "" and rx.clean_company("Aluminium Division") == ""
+    assert rx.clean_company("Reliance Group") == "Reliance Group"

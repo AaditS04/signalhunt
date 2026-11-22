@@ -109,6 +109,10 @@ def clean_company(name: str) -> str:
     name = " ".join(words).strip(" ,.'\"")
     if name.endswith("'s"):
         name = name[:-2]
+    # live findings: "and Mysuru", "Aluminium Division": a fragment or a division is not a company
+    if name and (name.split()[0].lower() in ("and", "or", "of", "for", "with", "to") or
+                 name.split()[-1].lower() in ("division", "unit", "segment", "department", "plant", "facility")):
+        return ""
     return name
 
 

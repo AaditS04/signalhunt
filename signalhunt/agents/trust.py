@@ -48,6 +48,24 @@ def names_company(title: str, company: str) -> bool:
     return True
 
 
+SUBJECT_VERBS = (r"(?:admitted|admits|files?|filed|enters?|entered|faces?|facing|under(?:goes)?|goes|went|declared|"
+                 r"dragged|defaults?|defaulted|slips|moves?\s+to|taken\s+to|ordered\s+into|sent\s+(?:in)?to)")
+
+
+def is_subject_of_insolvency(title: str, company: str) -> bool:
+    """A refusal on news alone needs the headline to say THIS company is in insolvency: "<company> admitted to
+    insolvency", "insolvency plea against <company>". Live findings that must NOT count: "NCLT ... condones NTPC's
+    delay, directs liquidator" (NTPC is a creditor), "Ashok Leyland associate ALJD liquidated" (another entity),
+    "court quashes case against Tata Steel". Those become a caution that a person reads."""
+    if not DISTRESS_HARD.search(title):
+        return False
+    name = re.escape(company.strip())
+    hard = r"(?:insolven\w*|bankrupt\w*|liquidat\w*|winding[- ]up|cirp|nclt|ibc)"
+    direct = re.search(rf"\b{name}(?:'s)?\s+(?:\w+\s+){{0,1}}?{SUBJECT_VERBS}\b[^.]{{0,50}}\b{hard}", title, re.I)
+    against = re.search(rf"\b{hard}\s+(?:\w+\s+){{0,2}}?(?:against|of|for)\s+{name}\b", title, re.I)
+    return bool(direct or against)
+
+
 def distress_news(ctx: RunContext, company: str) -> dict:
     """Free Google News RSS search for distress about this exact company (last 365 days)."""
     if os.getenv("TRUST_NEWS_CHECK", "1") == "0":
@@ -73,7 +91,7 @@ def distress_news(ctx: RunContext, company: str) -> dict:
                 continue
             if DISTRESS_HARD.search(t) or DISTRESS_SOFT.search(t):
                 hits.append({"title": t, "url": r.get("url"), "record_date": r.get("published"),
-                             "publisher": r.get("publisher"), "hard": bool(DISTRESS_HARD.search(t))})
+                             "publisher": r.get("publisher"), "hard": is_subject_of_insolvency(t, company)})
         return {"checked": True, "hits": hits[:5], "query": q}
 
     return ctx.step(f"distress:{sha(company.lower())}", run)
@@ -123,7 +141,10 @@ def verdict(opp: dict, client: dict, signals: dict, distress: dict) -> dict:
         for h in distress.get("hits", []):
             evidence.append({"kind": "distress_news", "source": h.get("publisher") or "news", "value": h["title"],
                              "url": h.get("url"), "record_date": h.get("record_date")})
-            (dont if h.get("hard") else caution).append(f"distress news: \"{h['title'][:120]}\"")
+            if h.get("hard"):
+                dont.append(f"distress news: \"{h['title'][:120]}\"")
+            else:
+                caution.append(f"possible distress in the news, a person reads it: \"{h['title'][:120]}\"")
     else:
         missing.append(f"distress news: {distress.get('note')}")
     checks.append("distress news (insolvency, NCLT, layoffs)")
