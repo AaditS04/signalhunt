@@ -115,7 +115,7 @@ def execute_run(run_id: str) -> dict:
         _progress(ctx, prog, phase="fetching sources")
         fetched = _prefetch(ctx, cands)
 
-        # 3b. extract, verify, resolve identity — one article at a time. Decision-maker lookups run on a second
+        # 3b. extract, verify, resolve identity, one article at a time. Decision-maker lookups run on a second
         #     thread as soon as a company resolves (separate Crustdata rate limit), so the two queues overlap.
         _progress(ctx, prog, phase="verifying evidence")
         verified_items: list[dict] = []

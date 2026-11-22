@@ -1,4 +1,4 @@
-"""Evidence verification (deterministic — no model involved).
+"""Evidence verification (deterministic, no model involved).
 
 For each proposed event:
   * every field's quote must appear verbatim (after whitespace/quote normalisation) in the fetched page;

@@ -71,7 +71,7 @@ MONTHS = {"January", "February", "March", "April", "May", "June", "July", "Augus
 TRAIL = {"Inc", "Inc.", "on", "has", "will", "Ltd", "Ltd.", "Limited", "is", "are", "and", "of", "&", "de"}
 LOGISTICS_NAME = re.compile(r"\b(logistics|express|courier|freight|cargo|shipping|forwarders?|warehousing|3pl|supply chain solutions)\b", re.I)
 
-TYPE_RULES = [  # (type, sentence regex) — first match wins
+TYPE_RULES = [  # (type, sentence regex); first match wins
     ("WAREHOUSE_EXPANSION", re.compile(r"\b(warehouse|warehousing|cold storage|storage facility|logistics park|godown)\b", re.I)),
     ("DISTRIBUTION_OPERATIONS", re.compile(r"\b(distribution (?:centre|center|hub|facility)|sorting (?:centre|center)|depot|"
                                            r"mother hub)\b", re.I)),

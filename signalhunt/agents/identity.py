@@ -19,7 +19,7 @@ from ..sources import crustdata
 
 LEGAL = {"ltd", "limited", "pvt", "private", "inc", "incorporated", "llp", "llc", "corp", "corporation", "co",
          "plc", "the"}
-# Deliberately NOT stripped: "india", "industries", "group", "company" — "Heller Industries" and "Heller"
+# Deliberately NOT stripped: "india", "industries", "group", "company": "Heller Industries" and "Heller"
 # (a search firm) are different companies, as are "Foo India" and "Foo".
 
 

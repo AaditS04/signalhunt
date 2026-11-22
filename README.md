@@ -7,6 +7,8 @@ manufacturers who need them. Before any offer goes out it checks that the buyer 
 the ground, and that the payment terms are safe. It sells the finished work (a priced offer and a booked meeting),
 not a dashboard.
 
+**Demo video (2 min):** VIDEO_LINK_HERE · **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) and the diagrams in section 6.
+
 ## 1. The service: who does it today, who pays
 
 | | |
@@ -231,11 +233,29 @@ The full component diagram, with every module and table, is in [ARCHITECTURE.md]
 send and booking. **What didn't:** the rule extractor sometimes produces a bare word as a company (a live run produced
 "Group"); the distress check now refuses to search generic names and the buyer stays CANNOT_VERIFY.
 
+**Hardest case, and how we tested it:** a request that returned nothing ("top tier clients expanding in Madhya Pradesh
+and Uttar Pradesh in the past 45 days which would need trucks and cold storage"). We checked the zero against independent
+news searches, found real plant openings it had missed, and traced four faults, each now fixed with a test:
+1. "cold storage" swallowed "expanding" and "trucks", so only warehouses were searched (4 queries instead of 10);
+2. the news feed setting meant "past 7 days" and only page 1 was read, so a 45-day request saw one week (a plant opening
+   four weeks old sat on page 3);
+3. fire, crime and politics headlines used up the article budget;
+4. a distress headline about a different company ("Arvind Fashions") refused Arvind's new Varanasi plant.
+After the fixes the same request returns 12 verified leads (one operating plant, the rest correctly WATCHING) for
+about Rs 4 to 6 of Crustdata credits. A further batch of ambiguous requests led to support for state abbreviations
+(UP, MP), regions (central India, NCR), old city names, misspelled states and windows such as "last fortnight" or
+"since October 1", and to a rule that news alone refuses a buyer only when the headline makes that company the
+insolvency subject (live cases: NTPC as a creditor, an Ashok Leyland associate, a quashed Tata Steel case). Every
+interpretation of a request is printed on the run page.
+
 ## Economics
 
 * Cost per run is measured from the ledger (dashboard run page, `/api/runs/{id}` cost block).
 * Earlier news-only Gujarat run: 25 articles, 7 verified opportunities, 14.8 Crustdata credits, no model cost. The capacity
   layers add one enrich (2 credits) and one job search (0.03 per posting) per resolved company.
+* Measured live runs with all layers (22 Nov 2026, assumed $0.01 per credit): Chennai to Pune and Chakan request, 25
+  articles, 6 opportunities, Rs 5.32; Madhya Pradesh and Uttar Pradesh request, 60 articles, 12 opportunities, Rs 3.52 to
+  6.27, about 70 s. No model cost (rule-based path).
 * Price (assumption, in `client_profile.json`, to be checked against agency rates): Rs 15,000 per booked meeting or Rs
   2,500 per qualified opportunity; the outcome-based option is a share of revenue on filled lanes. Each offer carries the
   rupee value at stake from the 3PL's own rate card.
