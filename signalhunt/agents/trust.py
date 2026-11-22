@@ -15,12 +15,37 @@ from ..runtime import LimitExceeded, RunContext, sha
 from ..sources import news_rss
 from .identity import norm_name
 
-DISTRESS_HARD = re.compile(r"insolven|\bnclt\b|bankrupt|liquidat|winding up|ibc\b|default(?:ed|s)? on", re.I)
+# NCLT also approves mergers and capital reductions (restructuring, not distress): it counts only with an
+# insolvency word. Live finding: "NCLT Approves Rs 1438 Crore Capital Reduction" refused a healthy buyer.
+DISTRESS_HARD = re.compile(r"insolven|bankrupt|liquidat|winding[- ]up|\bcirp\b|\bibc\b|default(?:ed|s)? on|"
+                           r"\bnclt\b[^.]{0,40}\b(?:admit\w*|petition|plea)|(?:admit\w*|petition|plea)[^.]{0,40}\bnclt\b", re.I)
+# A headline word right after the name that is part of a LONGER company name ("Arvind Fashions" is not
+# "Arvind"). Words that commonly follow a company name in a headline are allowed.
+HEADLINE_WORDS = {"ltd", "limited", "pvt", "private", "inc", "corp", "group", "india", "admitted", "admits", "files",
+                  "filed", "faces", "facing", "gets", "got", "moves", "seeks", "enters", "under", "to", "in", "shares",
+                  "stock", "says", "announces", "lays", "cuts", "shuts", "defaults", "declared", "dragged", "hit", "hits",
+                  "sued", "receives", "reports", "posts", "slips", "plunges", "slumps", "insolvency", "nclt", "bankruptcy",
+                  "layoffs", "plans", "may", "will", "set", "is", "has", "on", "for", "after", "amid", "q1", "q2", "q3", "q4"}
 DISTRESS_SOFT = re.compile(r"layoff|lay off|job cuts|retrench|shut(?:s|ting)? down|closure|plant shut", re.I)
 GENERIC_WORDS = {"group", "india", "company", "industries", "enterprises", "limited", "holdings", "global",
                  "international", "the", "and", "of", "private", "ltd", "pvt"}
 SHRINK_DONT = -20.0
 SHRINK_CAUTION = -5.0
+
+
+def names_company(title: str, company: str) -> bool:
+    """True only if the headline names this company, not a longer name that starts with it."""
+    target = norm_name(company)
+    nt = norm_name(title)
+    m = re.search(rf"\b{re.escape(target)}\b(?:\s+(\w+))?", nt)
+    if not m:
+        return False
+    nxt = m.group(1)
+    if nxt and nxt not in HEADLINE_WORDS:
+        orig = re.search(rf"{re.escape(company.split()[-1])}\W+(\w+)", title, re.I)
+        if orig and orig.group(1)[:1].isupper():
+            return False  # "Arvind Fashions", "Tata Steel BSL": a different company
+    return True
 
 
 def distress_news(ctx: RunContext, company: str) -> dict:
@@ -44,8 +69,9 @@ def distress_news(ctx: RunContext, company: str) -> dict:
         hits = []
         for r in res[:40]:
             t = r.get("title") or ""
-            named = re.search(rf"\b{re.escape(target)}\b", norm_name(t))
-            if named and (DISTRESS_HARD.search(t) or DISTRESS_SOFT.search(t)):
+            if not names_company(t, company):
+                continue
+            if DISTRESS_HARD.search(t) or DISTRESS_SOFT.search(t):
                 hits.append({"title": t, "url": r.get("url"), "record_date": r.get("published"),
                              "publisher": r.get("publisher"), "hard": bool(DISTRESS_HARD.search(t))})
         return {"checked": True, "hits": hits[:5], "query": q}

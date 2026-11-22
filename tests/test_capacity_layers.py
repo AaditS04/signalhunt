@@ -172,3 +172,17 @@ def test_cold_chain_fit_reads_company_name_when_industry_is_generic():
 def test_land_allotment_counts_as_approved():
     o = opp(status="unclear", quote="Sugs Lloyd Limited has secured the allotment of 3,342 square metres of industrial land in Noida.")
     assert ladder.place(o, sig(), CLIENT)["rung"] == "FUNDED_OR_APPROVED"
+
+
+def test_distress_headline_must_name_this_company_not_a_longer_name():
+    # live finding: "Arvind" (Varanasi plant) was refused on a headline about Arvind Fashions
+    assert not trust.names_company("Arvind Fashions ARVINDFASN: NCLT Approves Rs 1438 Crore Capital Reduction", "Arvind")
+    assert trust.names_company("Arvind admitted to NCLT insolvency", "Arvind")
+    assert trust.names_company("Orbit Pharma Ltd files for bankruptcy", "Orbit Pharma")
+
+
+def test_nclt_restructuring_is_not_distress():
+    assert not trust.DISTRESS_HARD.search("NCLT Approves Rs 1438 Crore Capital Reduction")
+    assert not trust.DISTRESS_HARD.search("NCLT approves merger of two subsidiaries")
+    assert trust.DISTRESS_HARD.search("NCLT admits insolvency plea against Orbit Pharma")
+    assert trust.DISTRESS_HARD.search("Orbit Pharma admitted to CIRP")
