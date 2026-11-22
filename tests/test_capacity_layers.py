@@ -149,3 +149,12 @@ def test_recipient_allow_list(monkeypatch):
     a = approvals.create_draft("opp_x", None, "Hi", "Body", None)
     with pytest.raises(approvals.ApprovalError):
         approvals.approve(a["id"], "Deepanshu", "ceo@realcompany.com")
+
+
+def test_generic_company_name_is_never_refused_on_news(monkeypatch):
+    # live finding: the extractor produced a company called "Group" and unrelated "Group" headlines matched
+    monkeypatch.setenv("TRUST_NEWS_CHECK", "1")
+    d = trust.distress_news(None, "Group")
+    assert d["checked"] is False and "generic" in d["note"]
+    v = trust.verdict(opp(name="Group", resolved=False), CLIENT, sig(available=False), d)
+    assert v["verdict"] == "CANNOT_VERIFY"

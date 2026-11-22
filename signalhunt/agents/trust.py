@@ -17,6 +17,8 @@ from .identity import norm_name
 
 DISTRESS_HARD = re.compile(r"insolven|\bnclt\b|bankrupt|liquidat|winding up|ibc\b|default(?:ed|s)? on", re.I)
 DISTRESS_SOFT = re.compile(r"layoff|lay off|job cuts|retrench|shut(?:s|ting)? down|closure|plant shut", re.I)
+GENERIC_WORDS = {"group", "india", "company", "industries", "enterprises", "limited", "holdings", "global",
+                 "international", "the", "and", "of", "private", "ltd", "pvt"}
 SHRINK_DONT = -20.0
 SHRINK_CAUTION = -5.0
 
@@ -26,6 +28,11 @@ def distress_news(ctx: RunContext, company: str) -> dict:
     if os.getenv("TRUST_NEWS_CHECK", "1") == "0":
         return {"checked": False, "hits": [], "note": "news check switched off (TRUST_NEWS_CHECK=0)"}
 
+    target = norm_name(company)
+    if not target or set(target.split()) <= GENERIC_WORDS:
+        return {"checked": False, "hits": [],
+                "note": f"name '{company}' is too generic to search news reliably; a person checks"}
+
     def run():
         q = f'"{company}" insolvency OR NCLT OR layoffs OR bankruptcy'
         try:
@@ -34,11 +41,11 @@ def distress_news(ctx: RunContext, company: str) -> dict:
             raise
         except (net.SourceError, ValueError, Exception) as e:  # noqa: BLE001 - a failed check is reported, not hidden
             return {"checked": False, "hits": [], "note": f"news search failed ({str(e)[:100]})", "_transient": True}
-        target = norm_name(company)
         hits = []
         for r in res[:40]:
             t = r.get("title") or ""
-            if target and target in norm_name(t) and (DISTRESS_HARD.search(t) or DISTRESS_SOFT.search(t)):
+            named = re.search(rf"\b{re.escape(target)}\b", norm_name(t))
+            if named and (DISTRESS_HARD.search(t) or DISTRESS_SOFT.search(t)):
                 hits.append({"title": t, "url": r.get("url"), "record_date": r.get("published"),
                              "publisher": r.get("publisher"), "hard": bool(DISTRESS_HARD.search(t))})
         return {"checked": True, "hits": hits[:5], "query": q}
