@@ -58,7 +58,8 @@ def test_cluster_alias_maps_to_hub_and_cold_space_needs_cold_industry():
     m = lanes.match(opp(state="Maharashtra", cities=("Chakan",)), CLIENT, sig(regions={"Chennai": 40}))
     space = next(x for x in m["all"] if x["asset_id"] == "CHK-COLD")
     assert space["strength"] == "BOTH_ENDS" and "same cluster" in space["reasons"][0]
-    steel = lanes.match(opp(state="Maharashtra", cities=("Chakan",), industry="steel"), CLIENT, sig())
+    steel = lanes.match(opp(state="Maharashtra", cities=("Chakan",), industry="steel", name="Nova Steel",
+                            quote="Nova Steel has inaugurated a plant in Chakan."), CLIENT, sig())
     assert next(x for x in steel["all"] if x["asset_id"] == "CHK-COLD")["strength"] == "ORIGIN_ONLY"
     assert lanes.hub("Oragadam") == "Chennai" and lanes.hub("Talegaon") == "Pune"
 
@@ -158,3 +159,11 @@ def test_generic_company_name_is_never_refused_on_news(monkeypatch):
     assert d["checked"] is False and "generic" in d["note"]
     v = trust.verdict(opp(name="Group", resolved=False), CLIENT, sig(available=False), d)
     assert v["verdict"] == "CANNOT_VERIFY"
+
+
+def test_cold_chain_fit_reads_company_name_when_industry_is_generic():
+    # live finding: "Anuh Pharma" arrived with industry "manufacturing"
+    o = opp(state="Maharashtra", cities=("Palghar",), name="Anuh Pharma", industry="manufacturing",
+            quote="Anuh Pharma has inaugurated a new unit in Palghar.")
+    space = next(x for x in lanes.match(o, CLIENT, sig())["all"] if x["asset_id"] == "CHK-COLD")
+    assert "'pharma'" in space["reasons"][1]

@@ -99,7 +99,8 @@ def match(opp: dict, client: dict, signals: dict) -> dict:
     site_state = opp.get("state")
     site_cities = opp.get("cities") or []
     site_hubs = {hub(c) for c in site_cities if c}
-    industry = (opp.get("industry") or "").lower()
+    # industry as stated, plus the company name and headline (an extractor may label "Anuh Pharma" just "manufacturing")
+    industry = " ".join(filter(None, [opp.get("industry"), opp.get("company_name"), opp.get("headline_quote")])).lower()
     matches = []
     for lane in cap.get("lanes", []):
         o_state, d_state = lane["origin_state"], lane["dest_state"]
@@ -140,8 +141,9 @@ def match(opp: dict, client: dict, signals: dict) -> dict:
         reasons = [f"new site in {', '.join(site_cities) or site_state}" + (f", same cluster as {sp['city']}" if near
                    else f", same state as {sp['city']}")]
         if needs_cold:
-            reasons.append(f"industry '{opp.get('industry')}' " + ("typically needs cold chain" if fits
-                           else "is not a known cold-chain industry"))
+            hit = next((k for k in client.get("cold_chain_industries", []) if k in industry), None)
+            reasons.append(f"'{hit}' in the company's industry, name or source typically needs cold chain" if fits
+                           else f"nothing in industry '{opp.get('industry')}', name or source points to cold chain")
         matches.append({"asset_type": "space", "asset_id": sp["id"], "asset": sp, "direction": "storage near new site",
                         "strength": "BOTH_ENDS" if (fits and near) else "ORIGIN_ONLY", "reasons": reasons,
                         "evidence": [], "value_at_stake_inr": value,
