@@ -53,7 +53,8 @@ REGIONS = {
     "western india": ["Gujarat", "Maharashtra", "Rajasthan", "Goa"],
     "east india": ["West Bengal", "Odisha", "Bihar", "Jharkhand"],
     "eastern india": ["West Bengal", "Odisha", "Bihar", "Jharkhand"],
-    "north east": ["Assam"], "northeast": ["Assam"],
+    "north east": ["Assam", "Meghalaya", "Tripura", "Manipur", "Nagaland", "Mizoram", "Arunachal Pradesh", "Sikkim"],
+    "northeast": ["Assam", "Meghalaya", "Tripura", "Manipur", "Nagaland", "Mizoram", "Arunachal Pradesh", "Sikkim"],
     "ncr": ["Delhi", "Haryana", "Uttar Pradesh"],
 }
 CITY_ALIASES = {"bombay": "Mumbai", "madras": "Chennai", "calcutta": "Kolkata", "poona": "Pune", "baroda": "Vadodara"}
@@ -128,7 +129,7 @@ def rule_parse(text: str) -> dict:
     triggers = []
     if re.search(r"warehous|storage|godown|logistics park|cold[- ]chain|reefer|refrigerat", t):
         triggers.append("WAREHOUSE_EXPANSION")
-    if re.search(r"manufactur|plant|factory|production|facilit", t):
+    if re.search(r"manufactur|plant|factory|production|facilit|capacity|\bunits?\b|\bmills?\b|greenfield|brownfield", t):
         triggers.append("MANUFACTURING_EXPANSION")
     if re.search(r"geograph|new market|new region|enter", t):
         triggers.append("GEOGRAPHIC_EXPANSION")
@@ -158,9 +159,47 @@ def rule_parse(text: str) -> dict:
     cities = sorted({c for c in geo.CITY_TO_STATE if re.search(rf"\b{re.escape(c)}\b", t)})
     # "manufacturing expansion/plant" names a trigger, not an industry restriction
     t_ind = re.sub(r"manufactur\w*\s+(expansion|plant|facilit\w*|unit|capacity)", " ", t)
+    t_ind = re.sub(r"\b(exclud\w*|except|other than|apart from|but not|skip)\b.*", " ", t_ind)  # excluded names aren't industries
     industries = [k for k in geo.INDUSTRIES if re.search(rf"\b{re.escape(k)}\b", t_ind)]
+    for k, words in geo.INDUSTRY_REQUEST_WORDS.items():
+        if k not in industries and any(re.search(rf"\b{re.escape(w)}\b", t_ind) for w in words):
+            industries.append(k)
     return {"industries": industries, "states": states, "cities": [c.title() for c in cities],
             "window_days": window, "triggers": triggers, "company_characteristics": [], "constraints": notes + wnotes}
+
+
+EXCL_RE = re.compile(r"\b(?:exclud(?:e|ing)|except(?: for)?|other than|apart from|but not|not including|skip)\s+"
+                     r"([^;.\n]+)", re.I)
+
+
+def request_exclusions(text: str) -> list[str]:
+    """Company names the request itself rules out, e.g. "...; exclude Ritco Logistics and TCI Express"."""
+    return _exclusions(text)[0]
+
+
+def excluded_places(text: str) -> list[str]:
+    """States the request rules out, e.g. "...in UP and HP but not in Delhi"."""
+    return _exclusions(text)[1]
+
+
+def _exclusions(text: str) -> tuple[list[str], list[str]]:
+    companies, places = [], []
+    for m in EXCL_RE.finditer(text):
+        for name in re.split(r",|\band\b|\bor\b|/", m.group(1)):
+            name = name.strip(" '\"")
+            bare = re.sub(r"^(?:in|from|at|near)\s+", "", name, flags=re.I).strip()
+            state = geo.resolve_state(bare) if bare else None
+            if state and (bare.lower() == state.lower() or bare != name or bare.lower() in geo.CITY_TO_STATE
+                          or bare in geo.STATE_ALIASES):
+                places.append(state)
+            elif len(name) >= 2 and name.lower() not in {"logistics companies", "competitors", "rivals"}:
+                companies.append(name)
+    return list(dict.fromkeys(companies)), list(dict.fromkeys(places))
+
+
+def foreign_places(text: str) -> list[str]:
+    t = text.lower()
+    return [p.title() if len(p) > 3 else p.upper() for p in geo.FOREIGN_PLACES if re.search(rf"\b{re.escape(p)}\b", t)]
 
 
 def validate(spec: dict, text: str) -> dict:
@@ -202,8 +241,21 @@ def parse_request(ctx: RunContext, text: str) -> dict:
     if raw is None:
         raw = rule_parse(text)
     spec = validate(raw, text)
+    # request-level exclusions are parsed deterministically on both paths, so a model can never drop one
+    spec["excluded_companies"] = request_exclusions(text)
+    for x in spec["excluded_companies"]:
+        spec["constraints"].append(f"Exclude {x} (from the request)")
+    for s in excluded_places(text):
+        if s in spec["states"]:
+            spec["states"].remove(s)
+        spec["constraints"].append(f"Exclude {s} (from the request)")
     if not spec["states"]:
         spec["states"] = []
-        spec["constraints"].append("No Indian state recognised in the request; searching India-wide.")
+        foreign = foreign_places(text)
+        if foreign:
+            spec["out_of_scope"] = (f"The request names a location outside India ({', '.join(foreign)}). "
+                                    "The client serves India only, so no search was run.")
+        else:
+            spec["constraints"].append("No Indian state recognised in the request; searching India-wide.")
     spec["parse_method"] = method
     return spec

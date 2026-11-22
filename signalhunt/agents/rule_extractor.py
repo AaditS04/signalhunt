@@ -98,11 +98,38 @@ def split_sentences(text: str) -> list[str]:
     return out
 
 
+LEGAL_SUFFIX = re.compile(r"\b(Limited|Ltd\.?|Pvt\.?|Private|LLP|Inc\.?|Corporation)\b")
+# words that are never a company on their own: regions, and the product / facility nouns that open headlines
+REGION_WORDS = {"asia", "world", "country", "nation", "europe", "africa", "south", "north", "east", "west", "southeast",
+                "india", "bharat", "region", "state", "city"} | set(geo.FOREIGN_PLACES)
+GENERIC_NOUNS = {"ethanol", "steel", "cement", "solar", "lpg", "cng", "green", "hydrogen", "ammonia", "battery", "plant",
+                 "factory", "unit", "project", "facility", "warehouse", "park", "phase", "hub", "sez", "industrial",
+                 "logistics", "manufacturing", "investment", "expansion", "capacity", "semiconductor", "chip", "ev",
+                 "textile", "pharma", "dairy", "sugar", "paper", "power", "energy", "fertiliser", "fertilizer"}
+GOV_RE = re.compile(r"^(?:Ministry|Department|Dept\.?|Government|Govt\.?|Directorate|Cabinet|Commission|Council|Authority|"
+                    r"Municipal|Nagar Nigam|Office of)\b|\b(?:Ministry|Department of|Development Authority|"
+                    r"Industrial Development Corporation|Municipal Corporation)\b")
+PLACE_SUFFIX = re.compile(r"(?:[-\s](?:I{1,3}|IV|V|\d+)|\s+(?:Phase|Industrial|Park|Estate|Area|SEZ|Zone|Node|Cluster)\b.*)$")
+
+
+def _is_place(word: str) -> bool:
+    w = word.lower().strip(".,")
+    return w in geo.CITY_TO_STATE or geo.resolve_state(word) == word or w in REGION_WORDS
+
+
 def clean_company(name: str) -> str:
     words = name.replace("’", "'").split()
+    legal = bool(LEGAL_SUFFIX.search(name))
     while words and (words[0] in STOP_LEADS or words[0] in WEEKDAYS or words[0] in MONTHS
-                     or words[0].lower() in geo.CITY_TO_STATE or geo.resolve_state(words[0]) == words[0]
+                     # a leading place is a modifier ("Gujarat-based", "Pune Acme"), unless the name carries a legal
+                     # suffix, where it is part of the name: "Gujarat State Fertilizers & Chemicals Limited"
+                     or (not legal and (words[0].lower() in geo.CITY_TO_STATE or geo.resolve_state(words[0]) == words[0]))
+                     or (not legal and words[0] == "State")
+                     # "India's ReNew Energy Global", "Asia's largest" -> drop the possessive region
+                     or (words[0].endswith("'s") and (_is_place(words[0][:-2]) or words[0][:-2] in STOP_LEADS))
                      or words[0].endswith("-based") or words[0].lower() in ("its", "their", "the")):
+        if legal and words[0] == "State" and len(words) > 1:  # "State Bank of India Limited"
+            break
         words = words[1:]
     while words and (words[-1] in TRAIL or words[-1] in WEEKDAYS or words[-1] in MONTHS):
         words = words[:-1]
@@ -127,7 +154,15 @@ def company_score(name: str, how: str, sentence: str, title: str) -> float:
         return -99
     if geo.resolve_state(name) and name.lower() in {s.lower() for s in geo.STATE_CITIES} | set(geo.CITY_TO_STATE):
         return -99
+    # a park or site named after a place ("Narasapura-II", "Sanand Phase 2 Industrial Estate") is not a company
+    base = PLACE_SUFFIX.sub("", name).strip()
+    if base != name and base and all(_is_place(w) for w in base.split()):
+        return -99
+    if GOV_RE.search(name):
+        return -99  # ministries, departments and development authorities are not prospects
     lw = {w.lower().strip(".,") for w in words}
+    if len(words) == 1 and (name.lower() in REGION_WORDS or name.lower() in GENERIC_NOUNS):
+        return -99
     # a lone capitalised word ("Vithalapur", "Beyond") is usually a place or a sentence opener, not a company,
     # unless it is an acronym or the headline names it too
     if len(words) == 1 and not (lw & CORP_WORDS) and not name.isupper() and name not in title:
@@ -233,6 +268,55 @@ def acronym_map(text: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+EXT_TOKEN = r"[A-Z][A-Za-z0-9&\-]*"
+
+
+def expand_short_name(company: str, body: str, title: str) -> tuple[str, str] | None:
+    """'Jeh' -> 'Jeh Aerospace' when the article itself uses the longer form at least twice (or once plus in the
+    headline). Returns (full name, verbatim passage containing it) so the expansion is provable."""
+    if len(company.split()) > 2 or company.isupper() and len(company) <= 3:
+        return None
+    counts: dict[str, int] = {}
+    passage: dict[str, str] = {}
+    for s in split_sentences(body):
+        if _headline_case(s):
+            continue  # "Jeh Aerospace Opens Aero-Engine Tooling Centre" repeated in the body: every word is capitalised
+        for m in re.finditer(rf"\b{re.escape(company)}((?:\s+{EXT_TOKEN}){{1,3}})", s):
+            ext = []
+            for w in m.group(1).split():
+                if (w in STOP_LEADS or w in MONTHS or w in WEEKDAYS or w in TRAIL or _is_place(w)
+                        or re.match(VERB, w.lower()) or w.lower() in EXT_STOP):
+                    break
+                ext.append(w)
+                full = f"{company} {' '.join(ext)}"
+                counts[full] = counts.get(full, 0) + 1
+                passage.setdefault(full, s)
+    # the longer form must appear in at least two ordinary sentences, so one stray phrase can't rename a company
+    best = max((f for f, n in counts.items() if n >= 2), key=len, default=None)
+    return (best, passage[best]) if best else None
+
+
+EXT_STOP = {"to", "rs", "inr", "worth", "new", "expansion", "invites", "plans", "eyes", "gets", "wins", "bags", "said",
+            "says", "chairman", "ceo", "md", "official", "officials", "spokesperson", "management", "board", "shares"}
+
+
+def _headline_case(s: str) -> bool:
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'’\-]*", s) if len(w) > 3]
+    return len(words) >= 4 and sum(w[0].isupper() for w in words) / len(words) > 0.7
+
+
+YEAR_RE = re.compile(r"\b(19\d\d|20\d\d)\b")
+HISTORY_CUE = re.compile(r"\b(?:from|between|since|in|during|back in)\s+(?:\w+\s+)?(?:19|20)\d\d\b", re.I)
+
+
+def is_historical(sentence: str, window_start: str | None) -> bool:
+    """'From 2016 to 2020, TVS ILP expanded...' describes the past, not a trigger inside the window."""
+    years = [int(y) for y in YEAR_RE.findall(sentence)]
+    if not years or not window_start:
+        return False
+    return max(years) < int(window_start[:4]) and bool(HISTORY_CUE.search(sentence))
+
+
 def rule_extract(art: dict, spec: dict, max_events: int = 3) -> list[dict]:
     title = (art.get("title") or "").strip()
     sents = [s for s in split_sentences(art.get("text", "")) if 30 <= len(s) <= 600]
@@ -257,6 +341,8 @@ def rule_extract(art: dict, spec: dict, max_events: int = 3) -> list[dict]:
             continue
         if EXISTING.search(s) and not re.search(r"\b(new|expan\w*|additional|capacity)\b", s, re.I):
             continue
+        if is_historical(s, spec.get("window_start")):
+            continue
         etype = classify(s, spec["triggers"])
         if not etype:
             continue
@@ -267,6 +353,10 @@ def rule_extract(art: dict, spec: dict, max_events: int = 3) -> list[dict]:
         company_quote = s
         if company in acros:
             company, company_quote = acros[company]
+        else:
+            longer = expand_short_name(company, art.get("text", ""), title)
+            if longer:
+                company, company_quote = longer
         city, state, loc_q = find_location(sents, i, title, n_body)
         if (company.lower(), etype, state) in seen:
             continue

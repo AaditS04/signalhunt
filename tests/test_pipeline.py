@@ -124,3 +124,10 @@ def test_requirement_change_client_exclusion(fake_sources, monkeypatch):
     res = run()
     assert "Nova Steel" not in by_company(res)
     assert "exclusion list (Nova Steel)" in reasons(res, "rejected")
+
+
+def test_progress_counts_every_article(fake_sources):
+    res = run()
+    p = res["progress"]
+    # article-level rejections (no event, unreadable source) are counted too, not only verifier outcomes
+    assert p["verified"] + p["cannot_verify"] + p["rejected"] >= p["articles_done"] > 0

@@ -42,10 +42,20 @@ STATE_CITIES: dict[str, list[str]] = {
     "Goa": ["Panaji", "Verna", "Margao", "Vasco"],
     "Jammu and Kashmir": ["Jammu", "Srinagar", "Kathua", "Samba"],
     "Dadra and Nagar Haveli and Daman and Diu": ["Silvassa", "Daman", "Diu"],
+    "Meghalaya": ["Shillong", "Byrnihat"],
+    "Tripura": ["Agartala"],
+    "Manipur": ["Imphal"],
+    "Nagaland": ["Kohima", "Dimapur"],
+    "Mizoram": ["Aizawl"],
+    "Arunachal Pradesh": ["Itanagar"],
+    "Sikkim": ["Gangtok"],
+    "Puducherry": ["Pondicherry"],
+    "Chandigarh": [],
 }
 STATE_ALIASES = {
     "UP": "Uttar Pradesh", "MP": "Madhya Pradesh", "TN": "Tamil Nadu", "AP": "Andhra Pradesh", "WB": "West Bengal",
-    "NCR": "Delhi", "Orissa": "Odisha", "Bombay": "Maharashtra",
+    "NCR": "Delhi", "Orissa": "Odisha", "Bombay": "Maharashtra", "HP": "Himachal Pradesh", "J&K": "Jammu and Kashmir",
+    "Pondicherry": "Puducherry",
 }
 
 CITY_TO_STATE = {c.lower(): s for s, cities in STATE_CITIES.items() for c in cities}
@@ -72,13 +82,14 @@ TRIGGER_KEYWORDS: dict[str, list[str]] = {
 }
 
 QUERY_TEMPLATES: dict[str, list[str]] = {
-    "WAREHOUSE_EXPANSION": ["{geo} new warehouse", "{geo} cold storage facility", "{geo} warehouse expansion company"],
+    "WAREHOUSE_EXPANSION": ["{geo} new warehouse -fire -blaze", "{geo} cold storage facility -fire",
+                            "{geo} warehouse expansion company -fire", "{geo} logistics park lease sq ft"],
     "MANUFACTURING_EXPANSION": ["{geo} new manufacturing plant", "{geo} plant expansion investment crore",
                                 "{geo} factory inaugurated"],
     "GEOGRAPHIC_EXPANSION": ["company expands operations {geo}"],
     "ECOMMERCE_GROWTH": ["{geo} fulfilment centre e-commerce"],
     "SUPPLY_CHAIN_HIRING": ["{geo} hiring supply chain warehouse jobs expansion"],
-    "DISTRIBUTION_OPERATIONS": ["{geo} distribution centre opens"],
+    "DISTRIBUTION_OPERATIONS": ["{geo} distribution centre opens", "{geo} new depot distribution network expansion"],
     "FUNDING_OR_INVESTMENT": ["{geo} company MoU investment new unit"],
 }
 
@@ -94,7 +105,29 @@ INDUSTRIES = {
     "retail": ["retail", "store", "supermarket"],
     "steel and metals": ["steel", "metal", "aluminium", "copper"],
     "renewable energy": ["solar", "wind", "renewable", "green hydrogen"],
+    "cement and building materials": ["cement", "tiles", "ceramic", "building material"],
 }
+
+# Words a REQUEST uses for an industry (narrower than the article keywords above, which include
+# generic words like "plant" or "store" that would over-match a request).
+INDUSTRY_REQUEST_WORDS = {
+    "pharma": ["pharma", "pharmaceutical", "drug maker", "api maker"],
+    "automotive": ["auto", "automotive", "automobile", "auto component", "auto parts", "ev maker", "two-wheeler", "tyre"],
+    "chemicals": ["chemical", "chemicals", "petrochemical", "fertiliser", "fertilizer"],
+    "textiles": ["textile", "textiles", "apparel", "garment", "yarn", "mills"],
+    "electronics": ["electronics", "semiconductor", "mobile phone", "battery"],
+    "retail": ["retail", "retailer", "supermarket"],
+    "steel and metals": ["steel", "metal", "metals", "aluminium", "copper"],
+    "renewable energy": ["solar", "renewable", "green hydrogen", "wind energy"],
+    "fmcg": ["fmcg", "consumer goods", "food processing", "food", "beverage", "dairy"],
+    "e-commerce": ["e-commerce", "ecommerce", "d2c", "quick commerce"],
+    "cement and building materials": ["cement", "tiles", "ceramic", "building material"],
+}
+
+# Places outside India that a request might name (the client serves India only).
+FOREIGN_PLACES = ["dubai", "uae", "abu dhabi", "saudi", "usa", "united states", "america", "uk", "united kingdom",
+                  "london", "singapore", "china", "bangladesh", "sri lanka", "nepal", "vietnam", "thailand",
+                  "malaysia", "indonesia", "germany", "europe", "africa", "japan", "australia", "canada"]
 
 
 def norm(s: str) -> str:

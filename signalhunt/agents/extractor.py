@@ -93,8 +93,12 @@ def worth_model_call(art: dict, spec: dict) -> tuple[bool, str]:
     return False, "no sentence describes a new facility, expansion or investment"
 
 
+RULES_VERSION = 3  # bump when rule_extractor changes so cached extractions are redone, not reused
+
+
 def extract(ctx: RunContext, art: dict, spec: dict) -> dict:
-    key = f"extract:{sha(art['url'], ctx.cfg.llm_enabled, ','.join(spec['triggers']), ','.join(spec.get('states', [])))}"
+    key = (f"extract:{sha(art['url'], ctx.cfg.llm_enabled, ','.join(spec['triggers']), ','.join(spec.get('states', [])))}"
+           f":v{RULES_VERSION}")
 
     def run():
         if ctx.cfg.llm_enabled:

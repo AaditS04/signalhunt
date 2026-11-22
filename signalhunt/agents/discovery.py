@@ -67,6 +67,19 @@ UNUSABLE_URL = re.compile(r"(google\.com/goto|news\.google\.com/rss/articles|msn
                           r"youtube\.com|youtu\.be|twitter\.com|x\.com/|linkedin\.com/posts|threads\.net)", re.I)
 
 
+# Headlines that can't be a buying trigger. Screened before fetching so they don't use the per-run article budget.
+HEADLINE_NOISE = re.compile(
+    r"\b(fire|blaze|gutted|theft|robbery|looted|court|SC|HC|tribunal|verdict|accident|explosion|blast(?!\s+furnace)|arrest\w*|raid\w*|"
+    r"seiz\w*|suspends?|condol\w*|demise|obituary|dies|exam|NEET|CLAT|admit card|result[s]? 20\d\d|sensex|nifty|"
+    r"stock market|share price|horoscope|personal finance|market size|market report|market 20\d\d|cagr|"
+    r"BJP|Congress|election|poll)\b", re.I)
+
+
+def headline_noise(title: str) -> str | None:
+    m = HEADLINE_NOISE.search(title or "")
+    return m.group(1) if m else None
+
+
 def is_english(title: str) -> bool:
     """The extractor reads English; non-Latin headlines (e.g. Hindi) are skipped, not guessed at."""
     letters = [ch for ch in title if ch.isalpha()]
@@ -166,7 +179,7 @@ def discover(ctx: RunContext, spec: dict) -> dict:
     by_url: dict[str, dict] = {}
     by_title: dict[str, str] = {}
     dup_count = 0
-    outdated = []
+    outdated, screened = [], []
     for c in raw:
         cu = canonical_url(c["url"])
         tk = title_key(c["title"])
@@ -178,6 +191,11 @@ def discover(ctx: RunContext, spec: dict) -> dict:
             continue
         if c.get("published") and c["published"] < spec["window_start"]:
             outdated.append({**c, "reason": f"published {c['published']} is before window start {spec['window_start']}"})
+            continue
+        noise = headline_noise(c["title"])
+        if noise:
+            screened.append({**c, "cand_id": sha(cu),
+                             "reason": f"headline is not a business-expansion event ('{noise}'); not fetched"})
             continue
         c["canonical_url"] = cu
         c["cand_id"] = sha(cu)
@@ -193,6 +211,7 @@ def discover(ctx: RunContext, spec: dict) -> dict:
         "raw_count": len(raw),
         "duplicate_listings_removed": dup_count,
         "outdated": outdated,
+        "screened": screened,
         "candidates": cands[: ctx.cfg.max_articles],
         "dropped_for_budget": max(0, len(cands) - ctx.cfg.max_articles),
     }

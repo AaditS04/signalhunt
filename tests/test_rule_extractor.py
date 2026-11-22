@@ -74,3 +74,84 @@ def test_dateline_stripped_but_real_location_kept():
     evs = rule_extract({"title": "Heller plant", "text": "Mumbai, Nov 20 (PTI) US-based Heller Industries Inc on Friday "
                                                          "inaugurated its first Indian manufacturing facility near Ahmedabad."}, SPEC)
     assert evs and evs[0]["location_city"] == "Ahmedabad"
+
+
+# ---- regressions from the 2026-11-22 live sweep (sentences copied from the real articles) ----
+def names(evs):
+    return [e["company_name"] for e in evs]
+
+
+KA = {**SPEC, "triggers": ["WAREHOUSE_EXPANSION", "MANUFACTURING_EXPANSION"], "states": ["Karnataka", "Andhra Pradesh"]}
+
+
+def test_park_named_after_place_is_not_company():
+    evs = rule_extract({"title": "IndoSpace expands its Karnataka footprint with the launch of Narasapura-II park",
+                        "text": "The launch of Narasapura-II builds on IndoSpace’s established presence in the region through "
+                                "Narasapura-I, a 1.60M sq. ft. industrial and logistics park that has attracted occupiers."}, KA)
+    assert names(evs) == ["IndoSpace"]
+
+
+def test_region_possessive_is_not_company():
+    evs = rule_extract({"title": "Reliance commissions Asia's largest beverage plant at Orvakal in Andhra",
+                        "text": "Reliance Consumer Products has commissioned Asia’s largest beverage plant at Orvakal in Kurnool, "
+                                "just 12 months after ground-breaking, IT and HRD Minister Nara Lokesh said on Saturday."}, KA)
+    assert names(evs) and names(evs)[0].startswith("Reliance") and "Asia" not in names(evs)
+
+
+def test_leading_country_possessive_stripped():
+    evs = rule_extract({"title": "ReNew plans upstream solar manufacturing in Andhra Pradesh",
+                        "text": "India’s ReNew Energy Global has recently announced approximately INR 80,000 crore in investments in "
+                                "the state of Andhra Pradesh, India, to develop solar manufacturing and digital infrastructure."}, KA)
+    assert names(evs) == ["ReNew Energy Global"]
+
+
+def test_state_prefix_kept_in_legal_name():
+    evs = ex("Work begins at Sikka complex",
+             "Meanwhile, at Sikka, work has commenced on schedule for an integrated phosphoric and sulphuric acid complex "
+             "commissioned by Gujarat State Fertilizers & Chemicals Limited (GSFC) at Jamnagar, Gujarat.")
+    assert names(evs) and names(evs)[0].startswith("Gujarat State Fertilizers & Chemicals")
+
+
+def test_ministry_is_not_a_prospect():
+    evs = rule_extract({"title": "ACME clears investment for Odisha green ammonia plant",
+                        "text": "In July 2026, the Ministry of New and Renewable Energy announced a new 10-year agreement for a "
+                                "Paradip facility in Odisha."}, {**SPEC, "states": ["Odisha"]})
+    assert not any("Ministry" in n for n in names(evs))
+
+
+def test_generic_product_word_is_not_company():
+    evs = rule_extract({"title": "Ethanol plant row in Telangana",
+                        "text": "Ethanol plant management said they will set up the new plant at Chittanur in Telangana."},
+                       {**SPEC, "states": ["Telangana"]})
+    assert "Ethanol" not in names(evs)
+
+
+def test_short_name_expanded_to_full_name():
+    evs = rule_extract({"title": "Jeh Aerospace inaugurates tooling center of excellence in Hyderabad",
+                        "text": "Jeh Aerospace has opened a tooling centre in Hyderabad. Jeh Aerospace said the centre will cut lead "
+                                "times. The capability will also help new programs ramp faster at Jeh’s new Mach-2 factory in "
+                                "Hyderabad, which spans about 200,000 square feet."}, {**SPEC, "states": ["Telangana"]})
+    assert names(evs) and all(n.startswith("Jeh Aerospace") for n in names(evs))
+
+
+def test_historical_expansion_is_not_a_trigger():
+    evs = rule_extract({"title": "Inside TVS ILP's Madurai park",
+                        "text": "From 2016 to 2020, TVS ILP expanded its Grade-A warehousing network across India and opened a new "
+                                "facility in Odisha."}, {**SPEC, "states": ["Odisha"]})
+    assert evs == []
+
+
+def test_title_case_headline_in_body_does_not_rename_company():
+    for title, body, want in [
+        ("Jeh Aerospace Opens Aero-Engine Tooling Centre In Hyderabad",
+         "Jeh Aerospace Opens Aero-Engine Tooling Centre In Hyderabad\nJeh Aerospace Opens Aero-Engine Tooling Centre In Hyderabad\n"
+         "Jeh has opened a new tooling centre at its Hyderabad plant in Telangana.", "Jeh"),
+        ("Tata Steel Plans New Pellet Plant In Odisha",
+         "Tata Steel Plans New Pellet Plant In Odisha\nTata Steel Plans New Pellet Plant In Odisha\n"
+         "Tata Steel plans to set up a new pellet plant at Kalinganagar in Odisha.", "Tata Steel"),
+        ("Safran To Invest Rs 300 Crore In Hyderabad Facility",
+         "Safran To Invest Rs 300 Crore In Hyderabad Facility. Safran To Invest Rs 300 Crore again.\n"
+         "Safran will invest Rs 300 crore to set up a new engine facility in Hyderabad, Telangana.", "Safran"),
+    ]:
+        evs = rule_extract({"title": title, "text": body}, {**SPEC, "states": ["Telangana", "Odisha"]})
+        assert names(evs) == [want], (title, names(evs))

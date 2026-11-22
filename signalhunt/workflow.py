@@ -92,16 +92,23 @@ def execute_run(run_id: str) -> dict:
         ctx.log("INFO", "parse", f"spec: states={spec['states']} triggers={spec['triggers']} window={spec['window_days']}d "
                                  f"industries={spec['industries']} via {spec['parse_method']}")
         _crash_point("after_parse")
+        if spec.get("out_of_scope"):
+            _progress(ctx, prog, phase="out of scope", opportunities=0)
+            _update(run_id, status="COMPLETED", finished_at=db.now(), error=f"OUT_OF_SCOPE: {spec['out_of_scope']}")
+            ctx.log("WARN", "parse", spec["out_of_scope"])
+            return get_run(run_id)
+        client = {**client, "excluded_companies": list(client.get("excluded_companies", []))
+                  + spec.get("excluded_companies", [])}
 
         # 2. discover
         _progress(ctx, prog, phase="discovering signals")
         disc = ctx.step("discovery", lambda: discovery.discover(ctx, spec))
         cands = disc["candidates"]
-        for o in disc["outdated"]:
+        for o in disc["outdated"] + disc.get("screened", []):
             _save_candidate(run_id, o.get("cand_id") or sha(o["url"]), "REJECTED", o["reason"], {"listing": o})
         _progress(ctx, prog, phase="verifying evidence", articles_total=len(cands), articles_done=0,
                   queries=len(disc["queries"]), duplicate_listings_removed=disc["duplicate_listings_removed"],
-                  outdated_listings=len(disc["outdated"]))
+                  outdated_listings=len(disc["outdated"]), screened_headlines=len(disc.get("screened", [])))
         _crash_point("after_discovery")
 
         # 3a. fetch every source page in parallel (reads only; each fetch memoized, so a restart refetches nothing)
@@ -128,6 +135,10 @@ def execute_run(run_id: str) -> dict:
                 limited_reason = str(e)
                 ctx.log("WARN", "limits", f"{e}; finishing with the {i} articles processed")
                 break
+            if not items:  # whole article rejected or unreadable: count it from the outcome already saved
+                st = _candidate_status(ctx.run_id, c["cand_id"])
+                if st in counts:
+                    counts[st] += 1
             for it in items:
                 counts[it["status"]] += 1
                 if it["status"] == "VERIFIED":
@@ -388,6 +399,12 @@ def _save_candidate(run_id: str, cand_id: str, status: str, reason: str, data: d
     with db.connect() as con:
         con.execute("INSERT OR REPLACE INTO run_candidates(run_id, cand_id, status, reason, data_json) VALUES (?,?,?,?,?)",
                     (run_id, cand_id, status, reason[:1000], db.dumps(data)))
+
+
+def _candidate_status(run_id: str, cand_id: str) -> str | None:
+    with db.connect() as con:
+        row = con.execute("SELECT status FROM run_candidates WHERE run_id=? AND cand_id=?", (run_id, cand_id)).fetchone()
+    return row[0] if row else None
 
 
 def _save_opportunity(run_id: str, opp: dict) -> None:
