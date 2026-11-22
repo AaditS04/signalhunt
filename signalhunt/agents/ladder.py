@@ -13,7 +13,7 @@ from . import lanes
 
 RUNGS = ["ANNOUNCED", "FUNDED_OR_APPROVED", "HIRING_ON_GROUND", "OPERATING"]
 OPERATING_RE = re.compile(r"inaugurat|commissioned|began operations|commenced (?:operations|production)|"
-                          r"started production|rolled out (?:its )?first|operational|opened", re.I)
+                          r"started production|rolled out (?:its )?first|operational|\bopen(?:s|ed)\b", re.I)
 FUNDED_RE = re.compile(r"approv|sanction|cleared|allot+ed land|land allot|allotment of [^.]{0,60}land|raised|secured (?:funding|financing)|"
                        r"bhoomi pujan|ground[- ]?breaking|foundation stone|construction (?:has )?(?:begun|started)", re.I)
 

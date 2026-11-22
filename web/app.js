@@ -156,6 +156,7 @@ function oppRow(o) {
 
 // ------------------------------------------------------------ discover
 const EXAMPLES = [
+  "Find companies in Tamil Nadu and Maharashtra that have opened or announced new plants, warehouses or distribution centres in the last 30 days and could need truck capacity or warehouse space.",
   "Find companies in Gujarat that have announced warehouse expansion or manufacturing expansion in the last 30 days and could potentially require third-party logistics services.",
   "Find manufacturing and e-commerce companies in Gujarat and Rajasthan that have announced expansion, new facilities or warehouse-related developments in the last 30 days.",
   "Find companies opening new plants or distribution centres in Maharashtra or Karnataka in the last 2 weeks.",
