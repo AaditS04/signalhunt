@@ -27,6 +27,8 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("MAX_RUN_COST_USD", "1.0")
     monkeypatch.setenv("MAX_RUN_SECONDS", "300")
     monkeypatch.setenv("OUTREACH_MODE", "sandbox")
+    monkeypatch.setenv("TRUST_NEWS_CHECK", "0")  # no live news search inside tests
+    monkeypatch.setenv("ALLOWED_RECIPIENTS", "")
     from signalhunt import approvals, net
     monkeypatch.setattr(approvals, "OUTBOX", tmp_path / "outbox")
     net.BREAKER.failures.clear()

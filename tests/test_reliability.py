@@ -48,7 +48,8 @@ def test_kill_after_first_opportunity_no_duplicate_drafts(fake_sources, monkeypa
     monkeypatch.setattr(workflow, "_crash_point", lambda n: None)
     workflow.execute_run(rid)
     acts = approvals.list_actions()
-    assert len(acts) == len({a["opp_id"] for a in acts}) == len(workflow.run_result(rid)["opportunities"])
+    eligible = [o for o in workflow.run_result(rid)["opportunities"] if o["outreach"]["status"] in ("OFFER", "INTRO")]
+    assert len(acts) == len({a["opp_id"] for a in acts}) == len(eligible)
 
 
 # ---------------------------------------------------------------- approvals / exactly once
