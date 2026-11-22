@@ -167,3 +167,8 @@ def test_cold_chain_fit_reads_company_name_when_industry_is_generic():
             quote="Anuh Pharma has inaugurated a new unit in Palghar.")
     space = next(x for x in lanes.match(o, CLIENT, sig())["all"] if x["asset_id"] == "CHK-COLD")
     assert "'pharma'" in space["reasons"][1]
+
+
+def test_land_allotment_counts_as_approved():
+    o = opp(status="unclear", quote="Sugs Lloyd Limited has secured the allotment of 3,342 square metres of industrial land in Noida.")
+    assert ladder.place(o, sig(), CLIENT)["rung"] == "FUNDED_OR_APPROVED"
