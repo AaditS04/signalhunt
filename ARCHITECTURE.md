@@ -1,4 +1,4 @@
-# SignalHunt — Architecture
+# SignalHunt: Architecture
 
 ```mermaid
 flowchart TB
@@ -6,17 +6,22 @@ flowchart TB
     API -->|create run QUEUED| DB[(SQLite WAL<br/>runs · step_cache · opportunities<br/>run_candidates · actions · ledger · logs)]
     W[Background worker<br/>workflow.py] -->|pick RUNNING first, then QUEUED| DB
 
-    subgraph PIPE[Pipeline — every external call goes through RunContext.step = memoized in step_cache]
+    subgraph PIPE[Pipeline: every external call goes through RunContext.step = memoized in step_cache]
         P1[1 Request Understanding<br/>LLM → TargetSpec<br/>validated: states, triggers, window] --> P2
         P2[2 Discovery<br/>queries per state × trigger<br/>canonical-URL + headline dedup<br/>date-window pre-filter] --> P3
         P3[3 Fetch article<br/>direct → Crustdata web fetch fallback<br/>publication date + the HTML field it came from] --> P4
         P4[4 Trigger extraction<br/>LLM: every field + verbatim quote<br/>fallback: rule extractor] --> P5
-        P5[5 Evidence verification — deterministic<br/>quote must exist verbatim in page<br/>value must be inside its quote<br/>dated · in window · in geography · not a rival<br/>→ VERIFIED / CANNOT_VERIFY / REJECTED] --> P6
+        P5[5 Evidence verification, deterministic<br/>quote must exist verbatim in page<br/>value must be inside its quote<br/>dated · in window · in geography · not a rival<br/>→ VERIFIED / CANNOT_VERIFY / REJECTED] --> P6
         P6[6 Identity resolution<br/>Crustdata company/identify<br/>exact normalised name only<br/>lookalikes listed, never merged] --> P7
         P7[7 Dedup + contradiction check<br/>group by identity · state · trigger family<br/>conflicting amounts → CANNOT_VERIFY] --> P8
         P8[8 Decision-makers<br/>Crustdata person/search<br/>current role at resolved company id] --> P9
-        P9[9 Scoring — deterministic<br/>7 weighted components, reasons printed] --> P10
-        P10[10 Report + email draft<br/>LLM interpretation from verified facts only<br/>number guard → template fallback]
+        P9[9 Scoring, deterministic<br/>7 weighted components, reasons printed] --> Q1
+        Q1[10 Ground evidence<br/>Crustdata company/enrich headcount + job/search postings<br/>resolved company id only] --> Q2
+        Q2[11 Lane matcher<br/>site vs empty lanes and free space<br/>BOTH_ENDS / ORIGIN_ONLY / NONE] --> Q3
+        Q3[12 Reality ladder<br/>ANNOUNCED → FUNDED → HIRING_ON_GROUND → OPERATING<br/>below ground evidence → WATCHING, no draft] --> Q4
+        Q4[13 Worth winning?<br/>captive group · identity · headcount trend · distress news<br/>DONT_PURSUE → REFUSED · thin → CANNOT_VERIFY held] --> Q5
+        Q5[14 Payment terms by rule<br/>PSU · caution · size · MSMED 45-day clause] --> P10
+        P10[15 Offer or intro<br/>slot, price ≥ floor, promise, terms, trust card<br/>sentence-level number guard]
     end
     W --> PIPE
 
@@ -35,6 +40,9 @@ flowchart TB
     APPR -->|conditional UPDATE<br/>APPROVED → SENDING| OUT[Outbox<br/>sandbox file O_EXCL / SMTP Message-ID=key]
     OUT --> SENT[SENT exactly once]
     APPR -->|reject| REJ[REJECTED]
+    APPR -.->|recipient must be on ALLOWED_RECIPIENTS| OUT
+    SENT -->|buyer reply| RP[replies.py<br/>sender domain vs Crustdata company domains<br/>free-mail → HELD · role-play labelled]
+    RP -->|day + time parsed in code| BK[Meeting .ics O_EXCL<br/>capacity marked OFFERED once]
     BOOT[Process start] -->|reconcile SENDING actions<br/>resume RUNNING runs| W
 ```
 
@@ -52,3 +60,9 @@ flowchart TB
 | Approval | `approvals.approve` | Named approver + human-typed recipient required; nothing sends otherwise |
 | Evidence | `agents/verifier.py` | Deterministic verbatim-quote check; facts without a source never reach the output |
 | Explainability | `agents/scoring.py` | Fixed weights, per-component reason, assumptions in every report |
+| Capacity match | `agents/lanes.py`, `agents/ground.py` | Both-ends rule from Crustdata headcount-by-region and postings; cluster aliases (Chakan → Pune, Oragadam → Chennai) |
+| Reality ladder | `agents/ladder.py` | Rung from dated source wording plus postings at the site in the last 60 days |
+| Trust verdict | `agents/trust.py` | Captive groups (config), identity, six-month headcount trend, distress headlines naming the exact company |
+| Payment terms | `agents/terms.py` | Pure rules; every tier carries reasons |
+| Reply and booking | `replies.py` | Impostor check, time parsing, capacity lock, `.ics` with O_EXCL, reply row keyed on (action, sender, text) |
+| Contact rule | `approvals.recipient_allowed` | `ALLOWED_RECIPIENTS` allow-list; nothing outside it is ever sent |
