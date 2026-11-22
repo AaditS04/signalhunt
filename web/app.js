@@ -25,13 +25,69 @@ const STAT = {
   PENDING_APPROVAL: "bg-amber-100 text-amber-800", APPROVED: "bg-sky-100 text-sky-700", SENDING: "bg-indigo-100 text-indigo-700",
   SENT: "bg-emerald-100 text-emerald-700", RESOLVED: "bg-emerald-100 text-emerald-700", AMBIGUOUS: "bg-amber-100 text-amber-800",
   NOT_FOUND: "bg-amber-100 text-amber-800", UNRESOLVED_NAME_ONLY: "bg-slate-100 text-slate-600",
+  OFFER: "bg-emerald-100 text-emerald-700", INTRO: "bg-sky-100 text-sky-700", WATCHING: "bg-amber-100 text-amber-800",
+  REFUSED: "bg-red-100 text-red-700", PURSUE: "bg-emerald-100 text-emerald-700", PURSUE_WITH_CAUTION: "bg-amber-100 text-amber-800",
+  DONT_PURSUE: "bg-red-100 text-red-700", BOTH_ENDS: "bg-emerald-100 text-emerald-700", ORIGIN_ONLY: "bg-amber-100 text-amber-800",
+  NONE: "bg-slate-100 text-slate-600", STANDARD_CREDIT: "bg-emerald-100 text-emerald-700", PART_ADVANCE: "bg-amber-100 text-amber-800",
+  ADVANCE_ONLY: "bg-red-100 text-red-700", BOOKED: "bg-emerald-100 text-emerald-700", OFFERED: "bg-indigo-100 text-indigo-700",
+  OPEN: "bg-slate-100 text-slate-600", HELD_IMPOSTOR_RISK: "bg-red-100 text-red-700", HELD_DOMAIN_MISMATCH: "bg-red-100 text-red-700",
+  HELD_NO_TIME: "bg-amber-100 text-amber-800", HELD_CAPACITY: "bg-amber-100 text-amber-800", HELD_CANNOT_VERIFY: "bg-amber-100 text-amber-800",
+  ROLE_PLAY: "bg-violet-100 text-violet-700", DOMAIN_MATCH: "bg-emerald-100 text-emerald-700",
 };
+const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+const evLine = (e) => `<div class="text-xs text-slate-600 mt-1">• ${esc(e.kind ? e.kind.replaceAll("_", " ") : "")}: <b>${esc(e.value)}</b>
+  ${e.location ? " · " + esc(e.location) : ""} <span class="text-slate-400">${esc(e.source || "")}${e.field ? " · " + esc(e.field) : ""}${e.record_date ? " · record " + esc(e.record_date) : ""}</span>
+  ${e.url ? ` <a target="_blank" rel="noopener" class="text-indigo-600" href="${esc(e.url)}">source</a>` : ""}</div>`;
+function capacityBoard(board) {
+  return `<div class="card p-5"><h2 class="font-semibold mb-1">Capacity board</h2><div class="text-xs text-slate-500 mb-3">The client's empty lanes and free space (client-supplied). A booked meeting marks capacity OFFERED so it is never promised twice.</div>
+    <div class="grid md:grid-cols-2 gap-3">${(board || []).map((b) => { const a = b.asset; const lane = !!a.origin_city;
+      return `<div class="border rounded-lg p-3 text-sm"><div class="flex justify-between"><b>${esc(b.asset_id)}</b>${pill(b.status)}</div>
+        <div class="text-slate-600">${lane ? `${esc(a.origin_city)} → ${esc((a.dest_cities || []).join(" / "))} · ${esc(a.truck_type)} · ${a.empty_trucks_per_week} empty/week · ${esc((a.days || []).join(", "))}`
+          : `${esc(a.city)} · ${esc(a.type)} · ${a.pallets_free} pallets from ${esc(a.from)}`}</div>
+        <div class="text-xs text-slate-500">Rate ${inr(a.rate_inr_per_trip || a.rate_inr_per_pallet_month)} · floor ${inr(a.floor_inr_per_trip || a.floor_inr_per_pallet_month)}</div>
+        ${(b.offers || []).map((x) => `<div class="text-xs text-indigo-700 mt-1">Meeting ${esc(x.meeting_at)} · <a href="#/opp/${esc(x.opp_id)}">${esc(x.opp_id)}</a></div>`).join("")}</div>`; }).join("")}</div></div>`;
+}
+function dealDesk(o) {
+  const out = o.outreach || {}; const lm = o.lane_match || {}; const best = lm.best; const lad = o.ladder || {}; const tr = o.trust || {}; const t = o.terms || {};
+  const off = (o.report || {}).offer;
+  if (!o.outreach) return "";
+  return `<div class="card p-5 border-indigo-200"><div class="flex flex-wrap justify-between items-center gap-2"><h2 class="font-semibold">Deal desk</h2><div class="flex gap-2">${pill(out.status)}</div></div>
+    <div class="text-sm text-slate-700 mt-1">${esc(out.reason)}</div>
+    ${out.hold_reason ? `<div class="mt-2 text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-800">Held for a person: ${esc(out.hold_reason)}</div>` : ""}
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <div><div class="text-xs uppercase text-slate-500 font-semibold mb-1">1 · Capacity match</div>${pill(lm.match_strength || "NONE")}
+        ${best ? `<div class="text-sm mt-1"><b>${esc(best.asset_id)}</b> · ${esc(best.direction)} · value at stake ${inr(best.value_at_stake_inr)} <span class="text-xs text-slate-500">(${esc(best.value_basis)})</span></div>
+          ${best.reasons.map((r) => `<div class="text-xs text-slate-600 mt-1">• ${esc(r)}</div>`).join("")}${(best.evidence || []).map(evLine).join("")}` : '<div class="text-xs text-slate-500 mt-1">No empty lane or free space fits this site.</div>'}
+        ${lm.volume_band ? `<div class="text-xs text-slate-500 mt-2">Volume band: <b>${esc(lm.volume_band.band)}</b> (${esc(lm.volume_band.label)}; ${esc(lm.volume_band.basis)})</div>` : ""}</div>
+      <div><div class="text-xs uppercase text-slate-500 font-semibold mb-1">2 · Reality ladder</div>
+        <div class="flex gap-1 flex-wrap">${(lad.rungs || []).map((r, i) => `<span class="pill ${i <= lad.rung_index ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}">${esc(r.replaceAll("_", " "))}</span>`).join("")}</div>
+        ${(lad.reasons || []).map((r) => `<div class="text-xs text-slate-600 mt-1">• ${esc(r)}</div>`).join("")}${(lad.evidence || []).filter((e) => e.kind === "job_posting").map(evLine).join("")}</div>
+      <div><div class="text-xs uppercase text-slate-500 font-semibold mb-1">3 · Worth winning?</div>${pill(tr.verdict)}
+        ${(tr.reasons || []).map((r) => `<div class="text-xs text-slate-700 mt-1">• ${esc(r)}</div>`).join("")}${(tr.evidence || []).map(evLine).join("")}
+        ${(tr.missing || []).length ? `<div class="text-xs text-amber-700 mt-1">Can't verify: ${esc(tr.missing.join("; "))}</div>` : ""}
+        <div class="text-xs text-slate-400 mt-1">Checks: ${esc((tr.checks || []).join(", "))}. Not checked today: ${esc((tr.not_checked_today || []).join(", "))}.</div></div>
+      <div><div class="text-xs uppercase text-slate-500 font-semibold mb-1">4 · Payment terms</div>${pill(t.tier)}
+        <div class="text-sm mt-1">${t.credit_days} days credit${t.advance_pct ? ` · ${t.advance_pct}% advance` : ""}</div>
+        ${(t.reasons || []).map((r) => `<div class="text-xs text-slate-600 mt-1">• ${esc(r)}</div>`).join("")}
+        ${(t.clauses || []).map((r) => `<div class="text-xs text-slate-800 mt-1 italic">“${esc(r)}”</div>`).join("")}<div class="text-xs text-slate-400 mt-1">${esc(t.label || "")}</div></div>
+    </div>
+    ${off ? `<div class="mt-4 text-sm bg-emerald-50 border border-emerald-200 rounded p-3">Offer on <b>${esc(off.asset_id)}</b>: ${inr(off.price_inr)} (floor ${inr(off.floor_inr)}) · terms ${esc(off.terms_tier)} · ${esc(off.service_promise)}
+      ${((o.report || {}).removed_sentences || []).length ? `<div class="text-xs text-red-700 mt-1">Removed by the number guard: ${esc(o.report.removed_sentences.map((x) => x.sentence).join(" | "))}</div>` : '<div class="text-xs text-emerald-700 mt-1">Every number in the offer is from a verified fact or the client profile (checked in code).</div>'}</div>` : ""}
+    ${(o.replies || []).length ? `<div class="mt-4"><div class="text-xs uppercase text-slate-500 font-semibold mb-1">Replies</div>${o.replies.map(replyLine).join("")}</div>` : ""}
+  </div>`;
+}
+function replyLine(r) {
+  const sc = (r.detail || {}).sender_check || {};
+  return `<div class="border rounded-lg p-2 text-xs mt-1"><div class="flex gap-2 items-center">${pill(r.verdict)} ${pill(sc.status)} <b>${esc(r.from_email)}</b></div>
+    <div class="text-slate-700 mt-1">“${esc(r.text)}”</div><div class="text-slate-500 mt-1">${esc(sc.reason || "")}${r.detail?.reason ? " · " + esc(r.detail.reason) : ""}
+    ${r.detail?.meeting_at ? ` · meeting <b>${esc(r.detail.meeting_at)}</b> (${esc(r.detail.ics || "")})` : ""}</div></div>`;
+}
 const pill = (v, map = STAT) => `<span class="pill ${map[v] || "bg-slate-100 text-slate-600"}">${esc(String(v).replaceAll("_", " "))}</span>`;
 const kpi = (label, value, sub = "") => `<div class="card p-5"><div class="text-xs font-medium text-slate-500 uppercase tracking-wide">${label}</div><div class="text-3xl font-bold mt-1">${value}</div><div class="text-xs text-slate-500 mt-1">${sub}</div></div>`;
 
 // ------------------------------------------------------------ routes
 const routes = {
-  "": dashboard, discover, opportunities, opp: oppDetail, outreach, activity, run: runView,
+  "": dashboard, discover, opportunities, opp: oppDetail, outreach, activity, run: runView, capacity: capacityView,
 };
 async function router() {
   clearInterval(timer);
@@ -92,7 +148,7 @@ async function dashboard() {
 
 function oppRow(o) {
   return `<tr class="border-b last:border-0 hover:bg-slate-50 cursor-pointer" onclick="location.hash='#/opp/${o.id}'">
-    <td><div class="font-semibold">${esc(o.company_name)}</div><div class="text-xs text-slate-500">${esc(o.industry)} · ${esc((o.cities || []).join(", ") || o.state)}</div></td>
+    <td><div class="font-semibold">${esc(o.company_name)} ${o.outreach ? pill(o.outreach.status) : ""}</div><div class="text-xs text-slate-500">${esc(o.industry)} · ${esc((o.cities || []).join(", ") || o.state)}${o.lane_match?.best ? " · " + esc(o.lane_match.best.asset_id) + " " + esc(o.lane_match.match_strength.replaceAll("_", " ").toLowerCase()) : ""}</div></td>
     <td class="text-sm">${esc(o.event_label)}<div class="text-xs text-slate-500">${esc(o.when?.latest_record_date || "")}</div></td>
     <td>${pill(o.priority, PRI)}</td>
     <td class="text-right font-bold text-lg">${o.score}</td></tr>`;
@@ -155,6 +211,10 @@ async function runView(id) {
       </div>
       <h2 class="font-semibold mb-3">Qualified opportunities (${r.opportunities.length})</h2>
       <div class="card mb-6">${r.opportunities.length ? `<table class="w-full text-sm"><tbody>${r.opportunities.map(oppRow).join("")}</tbody></table>` : `<div class="p-6 text-sm text-slate-500">${live ? "Working…" : "No verified opportunities for this request."}</div>`}</div>
+      ${(r.refused || []).length || (r.watching || []).length ? `<div class="grid md:grid-cols-2 gap-6 mb-6">
+        ${candList("Refused (worth-winning check)", (r.refused || []).map((x) => ({ status: "REFUSED", company: x.company, reason: x.reason })), "Strong-looking leads stopped by evidence; no outreach.")}
+        ${candList("Watching (reality ladder)", (r.watching || []).map((x) => ({ status: "WATCHING", company: x.company, reason: x.reason })), "Announced but no ground evidence yet; no outreach until it climbs.")}</div>` : ""}
+      ${r.capacity_board ? `<div class="mb-6">${capacityBoard(r.capacity_board)}</div>` : ""}
       <div class="grid md:grid-cols-2 gap-6">
         ${candList("Cannot verify", r.cannot_verify, "What was missing is named for each item.")}
         ${candList("Rejected", r.rejected, "Outdated, out of scope, rivals, or no qualifying event.")}
@@ -215,6 +275,7 @@ async function oppDetail(id) {
     </div>
     <div class="grid lg:grid-cols-3 gap-6">
       <div class="lg:col-span-2 space-y-6">
+        ${dealDesk(o)}
         <div class="card p-5"><div class="flex justify-between"><h2 class="font-semibold">What happened</h2><span class="text-xs text-slate-500">Verified fact · from source</span></div>
           <div class="quote mt-3 text-sm">“${esc(o.headline_quote)}”</div>
           <div class="text-xs text-slate-500 mt-2">Latest record ${esc(o.when?.latest_record_date || "-")} · ${o.independent_sources.length} independent source(s) · ${o.duplicate_reports_merged} duplicate report(s) merged
@@ -272,7 +333,8 @@ async function outreach() {
       return `<div class="card p-5">
         <div class="flex flex-wrap justify-between gap-2"><div><a href="#/opp/${a.opp_id}" class="font-semibold hover:text-indigo-600">${esc(o.company_name || a.opp_id)}</a>
           <div class="text-xs text-slate-500">${esc(o.event_label || "")} · To: ${esc(p.recipient ? p.recipient.name + ", " + p.recipient.title : "decision-maker not verified")} ${p.to_email ? "&lt;" + esc(p.to_email) + "&gt;" : ""}</div></div>
-          <div class="flex gap-2 items-center">${pill(a.status)}<span class="text-xs text-slate-400 mono">key ${esc(a.idempotency_key.slice(0, 10))}</span></div></div>
+          <div class="flex gap-2 items-center">${p.kind ? pill(p.kind) : ""}${pill(a.status)}<span class="text-xs text-slate-400 mono">key ${esc(a.idempotency_key.slice(0, 10))}</span></div></div>
+        ${p.hold_reason ? `<div class="mt-2 text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-800">Held for a person: ${esc(p.hold_reason)}</div>` : ""}
         <input id="s_${a.id}" ${pend ? "" : "disabled"} class="w-full border rounded-lg px-3 py-2 text-sm mt-3 font-medium disabled:bg-slate-50" value="${esc(p.subject)}"/>
         <textarea id="b_${a.id}" ${pend ? "" : "disabled"} rows="9" class="w-full border rounded-lg p-3 text-sm mt-2 disabled:bg-slate-50">${esc(p.body)}</textarea>
         ${pend ? `<div class="flex flex-wrap gap-2 mt-3 items-center">
@@ -282,8 +344,21 @@ async function outreach() {
           <button onclick="approveAct('${a.id}')" class="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-semibold">Approve & send</button>
           <button onclick="rejectAct('${a.id}')" class="px-3 py-2 text-sm rounded-lg text-red-600">Reject</button></div>`
         : `<div class="text-xs text-slate-500 mt-2">${a.approved_by ? `Decision by ${esc(a.approved_by)} · ${fmtTime(a.approved_at)}` : ""} ${a.sent_at ? ` · sent ${fmtTime(a.sent_at)} · ${esc(a.provider_ref)}` : ""} ${a.error ? " · " + esc(a.error) : ""}</div>`}
+        ${a.status === "SENT" ? `<div class="mt-3 border-t pt-3"><div class="text-xs font-semibold text-slate-600 mb-1">Record the buyer's reply (the sender is checked against the company's domains)</div>
+          <div class="flex flex-wrap gap-2"><input id="rf_${a.id}" placeholder="sender@their-domain" class="border rounded-lg px-3 py-2 text-sm w-64"/>
+          <input id="rt_${a.id}" placeholder="e.g. Thursday 3 PM works" class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]"/>
+          <button onclick="recordReply('${a.id}')" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Verify reply & book</button></div>
+          <div id="rl_${a.id}"></div></div>` : ""}
       </div>`; }).join("") || '<div class="card p-8 text-center text-slate-500 text-sm">No drafts yet.</div>'}</div>`;
   sidebar();
+}
+window.recordReply = async (id) => {
+  try { const r = await api(`/api/actions/${id}/reply`, { method: "POST", body: JSON.stringify({ from_email: $(`#rf_${id}`).value.trim(), text: $(`#rt_${id}`).value }) });
+    toast(`Reply: ${r.verdict.replaceAll("_", " ")}`, r.verdict === "BOOKED"); $(`#rl_${id}`).innerHTML = replyLine(r); }
+  catch (e) { toast(e.message, false); }
+};
+async function capacityView() {
+  $("#view").innerHTML = `<h1 class="text-2xl font-bold mb-4">Capacity</h1>${capacityBoard(await api("/api/capacity"))}`;
 }
 window.saveDraft = async (id) => {
   try { await api(`/api/actions/${id}`, { method: "PUT", body: JSON.stringify({ subject: $(`#s_${id}`).value, body: $(`#b_${id}`).value }) }); toast("Draft saved"); }
